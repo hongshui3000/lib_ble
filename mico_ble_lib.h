@@ -131,9 +131,11 @@ typedef OSStatus (*mico_ble_evt_cback_t)(mico_ble_event_t event, const mico_ble_
  *
  *  Initialize Bluetooth Sub-system.
  *
- * @param [in] context      : An pointer of The Application Context
- *             Structure.
- * @param [in] mico_context : An pointer of the MiCO Context structure.
+ * @param [in] name      : a c-style string name for BT Controller.
+ * 
+ * @param [in] whitelist_name: a c-style strin name for BT Controller whitelist.
+ * 
+ * @param [in] whitelist_uuid: a pointer of UUID for BT Controller whitelist.
  *
  * @param [in] cback        : An call back handler for the bluetooth
  *             for bluetooth sub-system.
@@ -141,7 +143,11 @@ typedef OSStatus (*mico_ble_evt_cback_t)(mico_ble_event_t event, const mico_ble_
  * @return #mico_bt_result_t
  *
  */
-mico_bt_result_t mico_ble_init(const char *name, const char *whitelist_name, const mico_bt_uuid_t *whitelist_uuid, mico_ble_evt_cback_t cback);
+mico_bt_result_t mico_ble_init(const char *name, 
+                               const char *whitelist_name, 
+                               const mico_bt_uuid_t *whitelist_uuid, 
+                               mico_bool_t is_central, 
+                               mico_ble_evt_cback_t cback);
 
 /**
  *  mico_bluetooth_start_procedure

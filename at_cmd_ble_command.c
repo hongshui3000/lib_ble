@@ -38,7 +38,7 @@
 
 #include "mico_ble_lib.h"
 
-#define BT_MAGIC_NUMBER         0x342b123e
+#define BT_MAGIC_NUMBER         0x672b123e
 #define BT_DEVICE_NAME_LEN      32
 
 /* Log api */
@@ -49,6 +49,7 @@
 typedef struct {
     uint32_t    magic_number;
     mico_bool_t is_at_mode;
+    mico_bool_t is_central;
     mico_bool_t is_enable_event;
     char        device_name[BT_DEVICE_NAME_LEN];    // c-style string
     char        whitelist_name[BT_DEVICE_NAME_LEN];     // c-style string
@@ -130,6 +131,7 @@ OSStatus at_cmd_register_ble_component(void)
     result = mico_ble_init(g_ble_context.p_config->device_name,
                            g_ble_context.p_config->whitelist_name,
                            &g_ble_context.p_config->whitelist_uuid,
+                           g_ble_context.p_config->is_central,
                            ble_event_handle);
 
     if (result == MICO_BT_SUCCESS) {
@@ -173,7 +175,7 @@ static OSStatus ble_event_handle(mico_ble_event_t  event, const mico_ble_evt_par
                 }
 
                 /* Start to main process */
-                mico_ble_start_procedure(MICO_TRUE);
+                // mico_ble_start_procedure(MICO_TRUE);
             }
 
             /* +LEEVENT:INIT,ON */
@@ -771,6 +773,7 @@ static mico_bt_result_t ble_default_config(at_cmd_ble_config_t *config)
     memset(config->whitelist_name, 0, BT_DEVICE_NAME_LEN);
     memset(&config->whitelist_uuid, 0, sizeof(mico_bt_uuid_t));
 
+    config->is_central = MICO_FALSE; /* Default into periphreal */
     config->is_at_mode = MICO_TRUE; /* AT Command Mode for default configuration */
     config->is_enable_event = MICO_TRUE;
     return MICO_BT_SUCCESS;

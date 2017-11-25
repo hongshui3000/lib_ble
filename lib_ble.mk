@@ -27,7 +27,8 @@ NAME := Lib_BLE_Component
 $(NAME)_INCLUDES += .
 
 $(NAME)_SOURCES :=  mico_ble_lib.c \
-                    at_cmd_ble_command.c
+                    at_cmd_ble_command.c \
+                    statemachine.c 
 
 $(NAME)_COMPONENTS += bluetooth/low_energy \
                       daemons/bt_smart
