@@ -31,8 +31,7 @@
  *
  ****************************************************************************/
 
-#define Report(fmt, ...)    custom_log("", fmt, ##__VA_ARGS__)
-#define XAD_Decode(state)   #state
+#define Report(fmt, ...)    custom_log("SM", fmt, ##__VA_ARGS__)
 
 static void smInsertRule(StateMachine *sm, SmRule *rule);
 
@@ -166,8 +165,8 @@ static void smTransition(StateMachine *sm, SmRule *oldState, SmRule *newState)
             if (sm->rules[pos].type == SMR_EXIT) {
 #if XA_DECODER == MICO_TRUE
                 if (sm->decode) {
-                    Report("%s(%lx): Exiting %s, calling %s\n", sm->prefix, (uint32_t)sm->context,
-                           XAD_Decode(oldState->state),
+                    Report("%s(%lx): Exiting %s, calling %s", sm->prefix, (uint32_t)sm->context,
+                           sm->stateNameTab[oldState->state],
                            sm->rules[pos].u.enterExit.actionName);
                 }
 #endif /* XA_DECODER == MICO_TRUE */
@@ -240,8 +239,8 @@ static void smTransition(StateMachine *sm, SmRule *oldState, SmRule *newState)
 
 #if XA_DECODER == MICO_TRUE
         if (sm->decode) {
-            Report("%s(%lx): Entering %s, calling %s\n", sm->prefix, (uint32_t)sm->context,
-                   XAD_Decode(newState->state),
+            Report("%s(%lx): Entering %s, calling %s", sm->prefix, (uint32_t)sm->context,
+                   sm->stateNameTab[newState->state],
                    sm->rules[superChain[superChainPos - 1]].u.enterExit.actionName);
         }
 #endif /* XA_DECODER == MICO_TRUE */
@@ -321,8 +320,8 @@ void SM_Init(StateMachine *sm, const SmInitParms *parms)
     sm->initState = parms->initState;
 
 #if XA_DECODER == MICO_TRUE
-    // sm->stateTypeName = "";
-    // sm->eventTypeName = "";
+    sm->stateNameTab = NULL;
+    sm->eventTypeNameTab = NULL;
     sm->decode = FALSE;
 #endif
 }
@@ -518,10 +517,12 @@ void SM_Block(StateMachine *sm, uint8_t substate, uint32_t eventType)
 /**
  * Configures state and event decoding types
  */
-void SM_EnableDecode(StateMachine *sm, mico_bool_t enable, const char *prefix)
+void SM_EnableDecode(StateMachine *sm, mico_bool_t enable, const char *prefix, const char **stateNameTab, const char **eventTypeNameTab)
 {
     sm->decode = enable;
     sm->prefix = prefix;
+    sm->stateNameTab = stateNameTab;
+    sm->eventTypeNameTab = eventTypeNameTab;
 }
 #endif
 
@@ -549,8 +550,8 @@ mico_bool_t SM_Handle(StateMachine *sm, uint32_t eventType)
 
 #if XA_DECODER == MICO_TRUE
         if (sm->decode) {
-            Report("%s(%lx): %s unexpected during %s, rejecting\n", sm->prefix, (uint32_t)sm->context,
-                   XAD_Decode(eventType), XAD_Decode(state->state));
+            Report("%s(%lx): %s unexpected during %s, rejecting", sm->prefix, (uint32_t)sm->context,
+                   sm->eventTypeNameTab[eventType], sm->stateNameTab[state->state]);
         }
 #endif /* XA_DECODER == MICO_TRUE */
 
@@ -567,8 +568,8 @@ mico_bool_t SM_Handle(StateMachine *sm, uint32_t eventType)
 
 #if XA_DECODER == MICO_TRUE
     if (sm->decode && state != nextState) {
-        Report("%s(%lx): On %s, state goes from %s to %s\n", sm->prefix, (uint32_t)sm->context,
-               XAD_Decode(eventType), XAD_Decode(state->state), XAD_Decode(nextState->state));
+        Report("%s(%lx): On %s, state goes from %s to %s", sm->prefix, (uint32_t)sm->context,
+               sm->eventTypeNameTab[eventType], sm->stateNameTab[state->state], sm->stateNameTab[nextState->state]);
     }
 #endif /* XA_DECODER == MICO_TRUE */
 
@@ -579,8 +580,8 @@ mico_bool_t SM_Handle(StateMachine *sm, uint32_t eventType)
 
 #if XA_DECODER == MICO_TRUE
     if (sm->decode) {
-        Report("%s(%lx): On %s, calling %s()\n", sm->prefix, (uint32_t)sm->context,
-               XAD_Decode(eventType), r->u.evt.actionName);
+        Report("%s(%lx): On %s, calling %s()", sm->prefix, (uint32_t)sm->context,
+               sm->eventTypeNameTab[eventType], r->u.evt.actionName);
     }
 #endif /* XA_DECODER == MICO_TRUE */
 
@@ -597,8 +598,8 @@ mico_bool_t SM_Handle(StateMachine *sm, uint32_t eventType)
 
 #if XA_DECODER == MICO_TRUE
         if (sm->decode) {
-            Report("%s(%lx): %s() failed, rollback to %s\n", sm->prefix, (uint32_t)sm->context,
-                   r->u.evt.actionName, XAD_Decode(nextState->state));
+            Report("%s(%lx): %s() failed, rollback to %s", sm->prefix, (uint32_t)sm->context,
+                   r->u.evt.actionName, sm->stateNameTab[nextState->state]);
         }
 #endif /* XA_DECODER == MICO_TRUE */
 
@@ -674,8 +675,8 @@ void SM_GotoState(StateMachine *sm, uint8_t newStateVal)
 
 #if XA_DECODER == MICO_TRUE
     if (sm->decode) {
-        Report("%s(%lx): Manual state change from %s to %s\n", sm->prefix, (uint32_t)sm->context,
-               XAD_Decode(sm->state->state), XAD_Decode(newState->state));
+        Report("%s(%lx): Manual state change from %s to %s", sm->prefix, (uint32_t)sm->context,
+               sm->stateNameTab[sm->state->state], sm->stateNameTab[newState->state]);
     }
 #endif /* XA_DECODER == MICO_TRUE */
 

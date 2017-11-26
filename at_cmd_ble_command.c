@@ -112,6 +112,8 @@ OSStatus at_cmd_register_ble_component(void)
     OSStatus err = kNoErr;
     mico_bt_result_t result;
 
+    char response[50] = {0};
+
     /*
      * Load user configuration data from local NVRAM.
      */
@@ -139,18 +141,30 @@ OSStatus at_cmd_register_ble_component(void)
         err = at_cmd_register_commands(g_ble_cmds, sizeof(g_ble_cmds) / sizeof(g_ble_cmds[0]));
         require_noerr_string(err, exit, "Registering AT Command for BLE failed");
 
+        at_ble_log("ble central/peripheral init");
+
         /* Launch application mode. */
         if (!g_ble_context.p_config->is_at_mode) {
             err = uart_driver_struct_get()->ioctl(AT_SET_AT_COMMAND, "AT+LESENDRAW");
         }
+
+        if (g_ble_context.p_config->is_enable_event) {
+            sprintf(response, "%s+LEEVENT:INIT,%s%s", AT_PROMPT, "ON", AT_PROMPT);
+        }
     } else if (result == MICO_BT_PENDING) {
         /* Process in @ble_event_handle */
     } else {
+        if (g_ble_context.p_config->is_enable_event) {
+            sprintf(response, "%s+LEEVENT:INIT,%s%s", AT_PROMPT, "OFF", AT_PROMPT);
+        }
         at_ble_log("Initialising BLE Library failed");
         err = result;
     }
 
 exit:
+    if (err != MICO_BT_PENDING && g_ble_context.p_config->is_enable_event) {
+        uart_driver_struct_get()->write((uint8_t *)response, strlen(response));
+    }
     return err;
 }
 
@@ -173,9 +187,6 @@ static OSStatus ble_event_handle(mico_ble_event_t  event, const mico_ble_evt_par
                 if (!g_ble_context.p_config->is_at_mode) {
                     err = uart_driver_struct_get()->ioctl(AT_SET_AT_COMMAND, "AT+LESENDRAW");
                 }
-
-                /* Start to main process */
-                // mico_ble_start_procedure(MICO_TRUE);
             }
 
             /* +LEEVENT:INIT,ON */
@@ -188,25 +199,74 @@ static OSStatus ble_event_handle(mico_ble_event_t  event, const mico_ble_evt_par
                 uart_driver_struct_get()->write((uint8_t *)response, strlen(response));
             }
             break;
-        case BLE_EVT_CONNECTED:
-            at_ble_log("A remote device is connected");
+        case BLE_EVT_PERIPHREAL_ADV_START:
+            at_ble_log("Advertising is started");
             if (g_ble_context.p_config->is_enable_event) {
-                /* +LEEVENT:CONNECTION,ON */
-                sprintf(response, "%s+LEEVENT:CONNECTION,%s%s", AT_PROMPT, "ON", AT_PROMPT);
+                sprintf(response, "%s+LEEVENT,ADV,ON%s", AT_PROMPT, AT_PROMPT);
                 uart_driver_struct_get()->write((uint8_t *)response, strlen(response));
             }
             break;
-        case BLE_EVT_DISCONNECTED:
+        case BLE_EVT_PERIPHERAL_ADV_STOP:
+            at_ble_log("Advertising is stoped");
+            if (g_ble_context.p_config->is_enable_event) {
+                sprintf(response, "%s+LEEVENT,ADV,OFF%s", AT_PROMPT, AT_PROMPT);
+                uart_driver_struct_get()->write((uint8_t *)response, strlen(response));
+            }
+            break;
+        case BLE_EVT_PERIPHERAL_CONNECTED:
+            at_ble_log("A remote device is connected");
+            if (g_ble_context.p_config->is_enable_event) {
+                /* +LEEVENT:CONNECTION,ON */
+                sprintf(response, "%s+LEEVENT:CONN,%s%s", AT_PROMPT, "ON", AT_PROMPT);
+                uart_driver_struct_get()->write((uint8_t *)response, strlen(response));
+            }
+            break;
+        case BLE_EVT_PERIPHREAL_DISCONNECTED:
             at_ble_log("The remote device is disconnected");
             if (g_ble_context.p_config->is_enable_event) {
                 /* +LEEVENT:CONNECTION,OFF */
-                sprintf(response, "%s+LEEVENT:CONNECTION,%s%s", AT_PROMPT, "OFF", AT_PROMPT);
+                sprintf(response, "%s+LEEVENT:CONN,%s%s", AT_PROMPT, "OFF", AT_PROMPT);
+                uart_driver_struct_get()->write((uint8_t *)response, strlen(response));
+            }
+            break;
+        case BLE_EVT_CENTRAL_SCAN_START:
+            at_ble_log("Scanning is started");
+            if (g_ble_context.p_config->is_enable_event) {
+                sprintf(response, "%s+LEEVENT,SCAN,ON%s", AT_PROMPT, AT_PROMPT);
+                uart_driver_struct_get()->write((uint8_t *)response, strlen(response));
+            }
+            break;
+        case BLE_EVT_CENTRAL_SCAN_STOP:
+            at_ble_log("Scanning is stoped");
+            if (g_ble_context.p_config->is_enable_event) {
+                sprintf(response, "%s+LEEVENT,SCAN,OFF%s", AT_PROMPT, AT_PROMPT);
+                uart_driver_struct_get()->write((uint8_t *)response, strlen(response));
+            }
+            break;
+        case BLE_EVT_CENTRAL_CONNECTED:
+            at_ble_log("A remote device is connected");
+            if (g_ble_context.p_config->is_enable_event) {
+                /* +LEEVENT:CONNECTION,ON */
+                sprintf(response, "%s+LEEVENT:CONN,%s%s", AT_PROMPT, "ON", AT_PROMPT);
+                uart_driver_struct_get()->write((uint8_t *)response, strlen(response));
+            }
+            break;
+        case BLE_EVT_CENTRAL_CONNECTING:
+            at_ble_log("A bluetooth device is being connected...");
+            break;
+        case BLE_EVT_CENTRAL_DISCONNECTED:
+            at_ble_log("A remote device is disconnected");
+            if (g_ble_context.p_config->is_enable_event) {
+                /* +LEEVENT:CONNECTION,ON */
+                sprintf(response, "%s+LEEVENT:CONN,%s%s", AT_PROMPT, "OFF", AT_PROMPT);
                 uart_driver_struct_get()->write((uint8_t *)response, strlen(response));
             }
             break;
         case BLE_EVT_DATA:
             // at_ble_log("Remote data: len = %d", params->u.data.length);
-            if (mico_ble_get_device_state() == BLE_STATE_CONNECTED) {
+            if (mico_ble_get_device_state() == BLE_STATE_PERIPHERAL_CONNECTED
+                || mico_ble_get_device_state() == BLE_STATE_CENTRAL_CONNECTED) {
+
                 if (g_ble_context.p_config->is_at_mode && g_ble_context.p_config->is_enable_event) {
                     /* +LEEVENT:DATA,<length>,xxxx */
                     sprintf(response, "%s+LEEVENT,DATA:%d,", AT_PROMPT, params->u.data.length);
@@ -217,10 +277,7 @@ static OSStatus ble_event_handle(mico_ble_event_t  event, const mico_ble_evt_par
                 }
             }
             break;
-        case BLE_EVT_STATE:
-            at_ble_log("State Changed: state = %d", params->u.state.value);
-            break;
-        case BLE_EVT_REPORT:
+        case BLE_EVT_CENTRAL_REPORT:
             at_ble_log("An new device: %s [%d]", params->u.report.addr, params->u.report.rssi);
             break;
         default:
@@ -405,7 +462,7 @@ static void ble_send_rawdata(at_cmd_driver_t *driver)
     require_string(msg != NULL, err_exit, "Malloc failed");
 
     /* Set discoverable */
-    mico_ble_set_device_discovery(MICO_TRUE);
+    mico_ble_start_device_discovery();
 
     /* Response to user. */
     sprintf(response, "%s", AT_RESPONSE_OK);
@@ -485,70 +542,74 @@ exit:
 }
 
 /**
- * AT+LESCAN=<ON/OFF>
+ * //AT+LESCAN=<ON/OFF>
+ * AT+LESCAN
  * OK or ERR
  */
 static void ble_set_scan_mode(at_cmd_driver_t *driver, at_cmd_para_t *para)
 {
-    mico_bool_t start;
-    char response[50], *params;
+//    mico_bool_t start;
+    char response[50];//, *params;
 
-    if (para->para_num != 1) {
-        sprintf(response, "%s", AT_RESPONSE_ERR);
-        goto exit;
-    }
+//    if (para->para_num != 1) {
+//        sprintf(response, "%s", AT_RESPONSE_ERR);
+//        goto exit;
+//    }
+//
+//    params = at_cmd_parse_get_string(para->para, 1);
+//    if (strcmp(params, "ON") == 0) {
+//        start = MICO_TRUE;
+//    } else if (strcmp(params, "OFF") == 0) {
+//        start = MICO_FALSE;
+//    } else {
+//        sprintf(response, "%s", AT_RESPONSE_ERR);
+//        goto exit;
+//    }
 
-    params = at_cmd_parse_get_string(para->para, 1);
-    if (strcmp(params, "ON") == 0) {
-        start = MICO_TRUE;
-    } else if (strcmp(params, "OFF") == 0) {
-        start = MICO_FALSE;
-    } else {
-        sprintf(response, "%s", AT_RESPONSE_ERR);
-        goto exit;
-    }
-
-    if (MICO_BT_SUCCESS != mico_ble_set_device_scan(start)) {
+//    if (MICO_BT_SUCCESS != mico_ble_set_device_scan(start)) {
+    if (MICO_BT_SUCCESS != mico_ble_start_device_scan()) {
         sprintf(response, "%s", AT_RESPONSE_ERR);
     } else {
         sprintf(response, "%s", AT_RESPONSE_OK);
     }
 
-exit:
+//exit:
     driver->write((uint8_t *)response, strlen(response));
 }
 
 /**
- * AT+LEADV=<ON/OFF>
+ * //AT+LEADV=<ON/OFF>
+ * AT+LEADV
  * OK or ERR
  */
 static void ble_set_advertisement_mode(at_cmd_driver_t *driver, at_cmd_para_t *para)
 {
-    mico_bool_t  start;
-    char response[50], *params;
+//    mico_bool_t  start;
+    char response[50];//, *params;
 
-    if (para->para_num != 1) {
-        sprintf(response, "%s", AT_RESPONSE_ERR);
-        goto exit;
-    }
+//    if (para->para_num != 1) {
+//        sprintf(response, "%s", AT_RESPONSE_ERR);
+//        goto exit;
+//    }
+//
+//    params = at_cmd_parse_get_string(para->para, 1);
+//    if (strcmp(params, "ON") == 0) {
+//        start = MICO_TRUE;
+//    } else if (strcmp(params, "OFF") == 0) {
+//        start = MICO_FALSE;
+//    } else {
+//        sprintf(response, "%s", AT_RESPONSE_ERR);
+//        goto exit;
+//    }
 
-    params = at_cmd_parse_get_string(para->para, 1);
-    if (strcmp(params, "ON") == 0) {
-        start = MICO_TRUE;
-    } else if (strcmp(params, "OFF") == 0) {
-        start = MICO_FALSE;
-    } else {
-        sprintf(response, "%s", AT_RESPONSE_ERR);
-        goto exit;
-    }
-
-    if (MICO_BT_SUCCESS != mico_ble_set_device_discovery(start)) {
+//    if (MICO_BT_SUCCESS != mico_ble_set_device_discovery(start)) {
+    if (MICO_BT_SUCCESS != mico_ble_start_device_discovery()) {
         sprintf(response, "%s", AT_RESPONSE_ERR);
     } else {
         sprintf(response, "%s", AT_RESPONSE_OK);
     }
 
-exit:
+//exit:
     driver->write((uint8_t *)response, strlen(response));
 }
 
@@ -626,23 +687,24 @@ static void ble_get_state(at_cmd_driver_t *driver)
     int  idx = 0;
 
     switch (mico_ble_get_device_state()) {
-        case BLE_STATE_CONNECTED:
-            idx = sprintf(response, "%s+LESTATE:CONNECTED", AT_PROMPT);
+        case BLE_STATE_PERIPHERAL_ADVERTISING:
+            idx = sprintf(response, "%s+LESTATE,ADV%s", AT_PROMPT, AT_PROMPT);
             break;
-        case BLE_STATE_DISCONNECTED:
-            idx = sprintf(response, "%s+LESTATE:DISCONNECTED", AT_PROMPT);
+        case BLE_STATE_PERIPHERAL_CONNECTED:
+            idx = sprintf(response, "%s+LESTATE,CONN%s", AT_PROMPT, AT_PROMPT);
             break;
-        case BLE_STATE_CONNECTING:
-            idx = sprintf(response, "%s+LESTATE:CONNECTING", AT_PROMPT);
+        case BLE_STATE_CENTRAL_CONNECTED:
+            idx = sprintf(response, "%s+LESTATE,CONN%s", AT_PROMPT, AT_PROMPT);
             break;
-        case BLE_STATE_DISCOVERABLE:
-            idx = sprintf(response, "%s+LESTATE:DISCOVERABLE", AT_PROMPT);
+        case BLE_STATE_CENTRAL_SCANNING:
+            idx = sprintf(response, "%s+LESTATE,SCAN%s", AT_PROMPT, AT_PROMPT);
             break;
-        case BLE_STATE_INQUIRING:
-            idx = sprintf(response, "%s+LESTATE:INQUIRING", AT_PROMPT);
+        case BLE_STATE_CENTRAL_CONNECTING:
+            idx = sprintf(response, "%s+LESTATE,CONNING%s", AT_PROMPT, AT_PROMPT);
             break;
         default:
-            break;
+            at_ble_log("Unknown state");
+            return;
     }
 
     if (idx == 0) {

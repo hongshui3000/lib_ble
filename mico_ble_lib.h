@@ -49,34 +49,32 @@ extern "C" {
  * Constants
  ****************************************************************************/
 
-/* An LED management api */
-//#define MICO_BLUETOOTH_RF_LED                     MICO_GPIO_17
-//#define MICO_BLUETOOTH_RF_LED_CONFIG              OUTPUT_PUSH_PULL
-//
-//#define mico_bluetooth_rf_led_init(led, config)   do { MicoGpioInitialize((mico_gpio_t)(led), config); } while (0)
-//#define mico_bluetooth_rf_led_active(led)         do { MicoGpioOutputLow((mico_gpio_t)(led)); } while (0)
-//#define mico_bluetooth_rf_led_deactive(led)       do { MicoGpioOutputHigh((mico_gpio_t)(led)); } while (0)
-
 /*****************************************************************************
  * Types
  *****************************************************************************/
 
-typedef enum {
-    BLE_STATE_DISCONNECTED,
-    BLE_STATE_DISCOVERABLE,
-    BLE_STATE_INQUIRING,
-    BLE_STATE_CONNECTING,
-    BLE_STATE_CONNECTED,
-} mico_ble_state_t;
+#define BLE_STATE_PERIPHERAL_ADVERTISING 1
+#define BLE_STATE_PERIPHERAL_CONNECTED	 2
+#define BLE_STATE_CENTRAL_SCANNING 		 3
+#define BLE_STATE_CENTRAL_CONNECTING	 4
+#define BLE_STATE_CENTRAL_CONNECTED 	 5
+#define BLE_STATE_IDLE					 6
+typedef uint8_t mico_ble_state_t;
 
 /* Bluetooth event type */
 typedef enum {
     BLE_EVT_INIT,
-    BLE_EVT_CONNECTED,
-    BLE_EVT_DISCONNECTED,
+    BLE_EVT_PERIPHREAL_ADV_START,
+    BLE_EVT_PERIPHERAL_ADV_STOP,
+    BLE_EVT_PERIPHERAL_CONNECTED,
+    BLE_EVT_PERIPHREAL_DISCONNECTED,
     BLE_EVT_DATA,
-    BLE_EVT_REPORT,
-    BLE_EVT_STATE,
+    BLE_EVT_CENTRAL_SCAN_START,
+    BLE_EVT_CENTRAL_SCAN_STOP,
+    BLE_EVT_CENTRAL_REPORT,
+    BLE_EVT_CENTRAL_CONNECTING,
+    BLE_EVT_CENTRAL_CONNECTED,
+    BLE_EVT_CENTRAL_DISCONNECTED,
 } mico_ble_event_t;
 
 /* Bluetooth event callback parameters. */
@@ -92,18 +90,13 @@ typedef struct {
             mico_bt_result_t status;
         } init;
 
-        /* valid if BLE_EVT_STATE */
-        struct {
-            mico_ble_state_t value;
-        } state;
-
         /* valid if BLE_EVT_DATA */
         struct {
             uint8_t *p_data;
             uint16_t length;
         } data;
 
-        /* valid if BLE_EVT_REPORT */
+        /* valid if BLE_EVT_CENTRAL_REPORT */
         struct {
             mico_bt_device_address_t addr;
             int8_t rssi;
@@ -148,17 +141,6 @@ mico_bt_result_t mico_ble_init(const char *name,
                                const mico_bt_uuid_t *whitelist_uuid, 
                                mico_bool_t is_central, 
                                mico_ble_evt_cback_t cback);
-
-/**
- *  mico_bluetooth_start_procedure
- *
- *  Start or stop the Data Mode.
- *
- * @param [in] start: True is starting, else stopping
- *
- * @return #mico_bt_result_t
- */
-mico_bt_result_t mico_ble_start_procedure(mico_bool_t start);
 
 /**
  *  bluetooth_send_data
@@ -231,7 +213,7 @@ const mico_bt_uuid_t *mico_ble_get_device_whitelist_uuid(void);
  * @param start
  * @return
  */
-mico_bt_result_t mico_ble_set_device_scan(mico_bool_t start);
+mico_bt_result_t mico_ble_start_device_scan(void);
 
 /**
  * Start or stop a device discoverable procedure.
@@ -242,8 +224,7 @@ mico_bt_result_t mico_ble_set_device_scan(mico_bool_t start);
  * @return
  *      MICO_BT_SUCCESS if succesfully.
  */
-mico_bt_result_t mico_ble_set_device_discovery(mico_bool_t start);
-
+mico_bt_result_t mico_ble_start_device_discovery(void);
 /**
  *
  * @param bdaddr

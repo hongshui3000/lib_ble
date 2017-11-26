@@ -141,9 +141,9 @@ typedef struct _StateMachine {
     void        *context;
 #if XA_DECODER == MICO_TRUE
     const char  *prefix;
-    // const char  *stateTypeName;
-    // const char  *eventTypeName;
     mico_bool_t  decode;
+    const char  **stateNameTab;
+    const char  **eventTypeNameTab;
 #endif /* XA_DECODER == MICO_TRUE */
 
     /* Used when there are no rules for a state. */
@@ -272,7 +272,8 @@ void SM_InitFromTemplate(StateMachine *sm, const StateMachine *tmpl,
  *         called for the typename.
  */
 #if XA_DECODER == MICO_TRUE
-void SM_EnableDecode(StateMachine *sm, mico_bool_t enable, const char *prefix);
+void SM_EnableDecode(StateMachine *sm, mico_bool_t enable, const char *prefix,
+                     const char **stateNameTab, const char **eventTypeNameTab);
 #endif 
 
 /*---------------------------------------------------------------------------
