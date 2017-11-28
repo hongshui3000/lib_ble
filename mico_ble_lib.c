@@ -82,10 +82,12 @@ typedef struct {
     mico_bool_t          m_is_initialized;
     mico_ble_evt_cback_t m_cback;
 
-    const char          *m_wl_name;
-    const mico_bt_uuid_t*m_wl_uuid;
+    char                *m_wl_name;
+    mico_bt_uuid_t      *m_wl_uuid;
+    uint16_t             m_central_attr_handle;
 
     mico_worker_thread_t m_worker_thread;
+    mico_worker_thread_t m_evt_worker_thread;
     mico_bt_smartbridge_socket_t m_central_socket;
     mico_bt_peripheral_socket_t  m_peripheral_socket;
 } mico_ble_context_t;
@@ -101,9 +103,14 @@ static mico_ble_context_t g_ble_context;
  * Central local resource
  * 
  */
-static mico_bt_uuid_t               g_central_whitelist_uuid = {
+static mico_bt_uuid_t g_central_whitelist_serv_uuid = {
     .len = LEN_UUID_16,
     .uu.uuid16 = BLUETOOTH_PRINT_SERVICE_UUID,
+};
+
+static mico_bt_uuid_t g_central_whitelist_char_uuid = {
+    .len = LEN_UUID_16,
+    .uu.uuid16 = BLUETOOTH_PRINT_CHAR_CMD_UUID,
 };
 
 static const mico_bt_smart_security_settings_t g_central_security_settings = {
@@ -282,7 +289,8 @@ static mico_bool_t app_peripheral_connected(void *context)
     mico_ble_post_evt(BLE_EVT_PERIPHERAL_ADV_STOP, NULL);
     
     /* 发送LECONN=SLAVE,ON消息 */
-    // memcpy(evt_params.bd_addr, )
+    memcpy(evt_params.bd_addr, g_ble_context.m_peripheral_socket.remote_device.address, 6);
+    evt_params.u.conn.handle = g_ble_context.m_peripheral_socket.connection_handle;
     mico_ble_post_evt(BLE_EVT_PERIPHERAL_CONNECTED, &evt_params);
     
     return TRUE;
@@ -292,8 +300,9 @@ static mico_bool_t app_peripheral_disconnected(void *context)
 {
     /* 发送LECONN=SLAVE,OFF消息 */
     mico_ble_evt_params_t evt_params;
-
-    mico_ble_post_evt(BLE_EVT_PERIPHREAL_DISCONNECTED, &evt_params);
+    memcpy(evt_params.bd_addr, g_ble_context.m_peripheral_socket.remote_device.address, 6);
+    evt_params.u.disconn.handle = g_ble_context.m_peripheral_socket.connection_handle;
+    mico_ble_post_evt(BLE_EVT_PERIPHERAL_DISCONNECTED, &evt_params);
     return TRUE;
 }
 
@@ -303,22 +312,106 @@ static mico_bool_t app_peripheral_disconnected(void *context)
 
 static OSStatus mico_ble_central_scan_complete_handler(void *arg)
 {
+    if (SM_InState(&g_ble_context.m_sm, BLE_STATE_CENTRAL_SCANNING)) {
+        SM_Handle(&g_ble_context.m_sm, BLE_SM_EVT_CENTRAL_SCANNED);
+    }
     return kNoErr;
 }
 
 static OSStatus mico_ble_central_scan_result_handler(const mico_bt_smart_advertising_report_t *scan_result)
 {
-    return kNoErr;
-}
+    char str_addr[BDADDR_NTOA_SIZE] = {0};
+    mico_ble_evt_params_t evt_params;
 
-static OSStatus mico_ble_central_connect_handler(void *arg)
-{
+    mico_ble_log("Scan result: %s", bdaddr_ntoa(scan_result->remote_device.address, str_addr));
+
+    memset(&evt_params, 0, sizeof(evt_params));
+
+    if (scan_result->event == BT_SMART_CONNECTABLE_UNDIRECTED_ADVERTISING_EVENT) {
+        if ((!g_ble_context.m_wl_name && strlen(scan_result->remote_device.name) > 0)
+            || (g_ble_context.m_wl_name 
+                && memcmp(g_ble_context.m_wl_name, scan_result->remote_device.name, strlen(g_ble_context.m_wl_name)) == 0)) {
+
+            memcpy(evt_params.bd_addr, scan_result->remote_device.address, 6);
+            strcpy(evt_params.u.report.name, scan_result->remote_device.name);
+            evt_params.u.report.rssi = scan_result->signal_strength;
+            mico_ble_post_evt(BLE_EVT_CENTRAL_REPORT, &evt_params);
+        }
+    }
     return kNoErr;
 }
 
 static OSStatus mico_ble_central_disconnection_handler(mico_bt_smartbridge_socket_t *socket)
 {
+    mico_ble_log("smartbridge device disconnected.");
+
+    if (SM_InState(&g_ble_context.m_sm, BLE_STATE_CENTRAL_CONNECTED)) {
+        SM_Handle(&g_ble_context.m_sm, BLE_SM_EVT_CENTRAL_DISCONNECTED);
+    }
     return kNoErr;
+}
+
+static OSStatus mico_ble_central_connect_handler(void *arg)
+{
+    mico_bt_result_t ret = MICO_BT_BADOPTION;
+    mico_bt_smartbridge_socket_status_t status;
+    mico_bt_smart_device_t *remote_device = (mico_bt_smart_device_t *)arg;
+
+    if (SM_InState(&g_ble_context.m_sm, BLE_STATE_CENTRAL_CONNECTING)) {
+        mico_bt_smartbridge_get_socket_status(&g_ble_context.m_central_socket, &status);
+        if (status == SMARTBRIDGE_SOCKET_DISCONNECTED) {
+            if (g_central_security_settings.authentication_requirements != BT_SMART_AUTH_REQ_NONE) {
+                if (mico_bt_dev_find_bonded_device((uint8_t *)remote_device->address) == MICO_FALSE) {
+                    mico_ble_log("Bond info not found. Initiate pairing request.");
+                    mico_bt_smartbridge_enable_pairing(&g_ble_context.m_central_socket, &g_central_security_settings, NULL);
+                } else {
+                    mico_ble_log("Bond info found. Encrypt use bond info.");
+                    mico_bt_smartbridge_set_bond_info(&g_ble_context.m_central_socket, &g_central_security_settings, NULL);
+                }
+            }
+
+            /* Connecting */
+            ret = mico_bt_smartbridge_connect(&g_ble_context.m_central_socket, 
+                                              remote_device, 
+                                              &g_central_connection_settings, 
+                                              mico_ble_central_disconnection_handler, 
+                                              NULL);
+            require_noerr_string(ret, exit, "Connect to the peer device failed.");
+
+            /* Find service */
+            uint8_t attribute_buffer[100];
+            mico_bt_smart_attribute_t *attribute = (mico_bt_smart_attribute_t *)attribute_buffer;
+            ret = mico_bt_smartbridge_get_service_from_attribute_cache_by_uuid(&g_ble_context.m_central_socket, 
+                                                                               &g_central_whitelist_serv_uuid, 0x00, 
+                                                                               0xffff, attribute, 100);
+            require_noerr_action_string(ret, exit, mico_bt_smartbridge_disconnect(&g_ble_context.m_central_socket, MICO_FALSE), 
+                                         "The specified GATT Service not found, disconnect.");
+
+            /* Find characteristic, and save characteristic value handle */
+            ret = mico_bt_smartbridge_get_characteritics_from_attribute_cache_by_uuid(&g_ble_context.m_central_socket, 
+                                                                                       &g_central_whitelist_char_uuid, 
+                                                                                       attribute->value.service.start_handle, 
+                                                                                       attribute->value.service.end_handle, 
+                                                                                       (mico_bt_smart_attribute_t *)attribute_buffer, 
+                                                                                       100);
+            if (ret != kNoErr) {
+                mico_ble_log("The specified characteristic not found, remove cache and disconnect");
+                mico_bt_smartbridge_remove_attribute_cache(&g_ble_context.m_central_socket);
+                mico_bt_smartbridge_disconnect(&g_ble_context.m_central_socket, MICO_FALSE);
+                goto exit;
+            }
+            g_ble_context.m_central_attr_handle = attribute->value.characteristic.value_handle;
+        }
+    }
+
+exit:
+    if (ret != MICO_BT_SUCCESS) {
+        SM_Handle(&g_ble_context.m_sm, BLE_SM_EVT_CENTRAL_CONNECTION_FAIL);
+    } else {
+        SM_Handle(&g_ble_context.m_sm, BLE_SM_EVT_CENTRAL_CONNECTED);
+    }
+    if (remote_device) free(remote_device);
+    return ret;
 }
 
 static mico_bt_result_t mico_ble_central_device_init(const char *whitelist_name, const mico_bt_uuid_t *whitelist_uuid)
@@ -326,14 +419,17 @@ static mico_bt_result_t mico_ble_central_device_init(const char *whitelist_name,
     OSStatus err = mico_bt_smartbridge_init(1);
     require_noerr(err, exit);
 
-    err = mico_bt_smartbridge_enable_attribute_cache(1, &g_central_whitelist_uuid, 1);
+    err = mico_bt_smartbridge_enable_attribute_cache(1, &g_central_whitelist_serv_uuid, 1);
     require_noerr(err, exit);
 
     err = mico_bt_smartbridge_create_socket(&g_ble_context.m_central_socket);
     require_noerr(err, exit);
 
-    err = mico_rtos_create_worker_thread(&g_ble_context.m_worker_thread, MICO_APPLICATION_PRIORITY, 2048, 10);
+    err = mico_rtos_create_worker_thread(&g_ble_context.m_evt_worker_thread, MICO_APPLICATION_PRIORITY, 2048, 10);
     require_noerr(err, exit);
+
+    err = mico_rtos_create_worker_thread(&g_ble_context.m_worker_thread, MICO_APPLICATION_PRIORITY, 2048, 10);
+    require_noerr_action(err, exit, mico_rtos_delete_worker_thread(&g_ble_context.m_evt_worker_thread));
 
 exit:
     return err;
@@ -342,27 +438,41 @@ exit:
 static mico_bool_t app_central_start_scanning(void *context)
 {
     /* 如果没有SCAN，则开启SCAN */
+    if (!mico_bt_smartbridge_is_scanning()) {
+        mico_ble_set_device_scan(MICO_TRUE);
+    }
     
     /* 发送LESCAN=ON消息 */
-    
+    mico_ble_post_evt(BLE_EVT_CENTRAL_SCAN_START, NULL);
     return TRUE;
 }
 
 static mico_bool_t app_central_scanning_stoped(void *context)
 {
     /* 发送LESCAN=OFF消息 */
+    mico_ble_post_evt(BLE_EVT_CENTRAL_SCAN_STOP, NULL);
     return TRUE;
 }
 
 static mico_bool_t app_central_connected(void *context)
 {
+    mico_ble_evt_params_t params;
+
     /* 发送LECONN=CENTRAL,ON消息 */
+    memcpy(params.bd_addr, g_ble_context.m_central_socket.remote_device.address, 6);
+    params.u.conn.handle = g_ble_context.m_central_socket.connection_handle;
+    mico_ble_post_evt(BLE_EVT_CENTRAL_CONNECTED, &params);
     return TRUE;
 }
 
 static mico_bool_t app_central_disconnected(void *context)
 {
+    mico_ble_evt_params_t params;
+
     /* 发送LECONN=CENTRAL,OFF消息 */
+    memcpy(params.bd_addr, g_ble_context.m_central_socket.remote_device.address, 6);
+    params.u.disconn.handle = g_ble_context.m_central_socket.connection_handle;
+    mico_ble_post_evt(BLE_EVT_CENTRAL_DISCONNECTED, &params);
     return TRUE;
 }
 
@@ -468,12 +578,8 @@ mico_bt_result_t mico_ble_init(const char *device_name,
     g_ble_context.m_is_central = is_central;
     g_ble_context.m_cback = cback;
     g_ble_context.m_is_initialized = MICO_TRUE;
-    if (whitelist_name && strlen(whitelist_name)) {
-        g_ble_context.m_wl_name = whitelist_name;
-    }
-    if (mico_ble_check_uuid(whitelist_uuid)) {
-        g_ble_context.m_wl_uuid = whitelist_uuid;
-    }
+    mico_ble_set_device_whitelist_name(whitelist_name);
+    mico_ble_set_device_whitelist_uuid(whitelist_uuid);
 
     /* Initialize StateMachine */
     mico_ble_state_machine_init(&g_ble_context.m_sm, init_state);
@@ -490,20 +596,6 @@ exit:
 }
 
 /**
- *  mico_bluetooth_start_procedure
- *
- *  Start or stop the Data Mode.
- *
- * @param [in] start: True is starting, else stopping
- *
- * @return #mico_bt_result_t
- */
-// mico_bt_result_t mico_ble_start_procedure(mico_bool_t start)
-// {
-//     return MICO_BT_SUCCESS;
-// }
-
-/**
  *  bluetooth_send_data
  *
  *  Trigger an action for sending data over RFCOMM Channel.
@@ -514,6 +606,7 @@ exit:
  */
 mico_bt_result_t mico_ble_get_dev_address(mico_bt_device_address_t bdaddr)
 {
+    mico_bt_dev_read_local_addr(bdaddr);
     return MICO_BT_SUCCESS;
 }
 
@@ -527,7 +620,12 @@ mico_bt_result_t mico_ble_get_dev_address(mico_bt_device_address_t bdaddr)
  */
 mico_bt_result_t mico_ble_set_device_name(const char *name)
 {
-    return MICO_BT_SUCCESS;
+    /* Update BT Controller Name */
+    extern mico_bt_result_t BTM_SetLocalDeviceName(char *);
+    extern mico_bt_cfg_settings_t mico_bt_cfg_settings;
+
+    mico_bt_cfg_settings.device_name = (uint8_t *)name;
+    return BTM_SetLocalDeviceName((char *)mico_bt_cfg_settings.device_name);
 }
 
 /**
@@ -537,7 +635,8 @@ mico_bt_result_t mico_ble_set_device_name(const char *name)
  */
 const char *mico_ble_get_device_name(void)
 {
-    return NULL;
+    extern mico_bt_cfg_settings_t mico_bt_cfg_settings;
+    return (const char *)mico_bt_cfg_settings.device_name;
 }
 
 /**
@@ -551,7 +650,19 @@ const char *mico_ble_get_device_name(void)
  */
 mico_bt_result_t mico_ble_set_device_whitelist_name(const char *name)
 {
-    return MICO_BT_SUCCESS;
+    mico_bt_result_t ret = MICO_BT_BADARG;
+
+    if (name) {
+        if (!g_ble_context.m_wl_name) {
+            g_ble_context.m_wl_name = (char *)malloc(31);
+            require_action(g_ble_context.m_wl_name, exit, ret = MICO_BT_NO_RESOURCES);
+        }
+        memset(g_ble_context.m_wl_name, 0, 31);
+        strcpy(g_ble_context.m_wl_name, name);
+    }
+
+exit:
+    return ret;
 }
 
 /**
@@ -562,7 +673,7 @@ mico_bt_result_t mico_ble_set_device_whitelist_name(const char *name)
  */
 const char *mico_ble_get_device_whitelist_name(void)
 {
-    return g_ble_context.m_wl_name;
+    return (const char *)g_ble_context.m_wl_name;
 }
 
 /**
@@ -576,7 +687,19 @@ const char *mico_ble_get_device_whitelist_name(void)
  */
 mico_bt_result_t mico_ble_set_device_whitelist_uuid(const mico_bt_uuid_t *uuid)
 {
-    return MICO_BT_SUCCESS;
+    mico_bt_result_t ret = MICO_BT_BADARG;
+
+    if (uuid && mico_ble_check_uuid(uuid)) {
+        if (!g_ble_context.m_wl_uuid) {
+            g_ble_context.m_wl_uuid = (mico_bt_uuid_t *)malloc(sizeof(mico_bt_uuid_t));
+            require_action(g_ble_context.m_wl_uuid, exit, ret = MICO_BT_NO_RESOURCES);
+        }
+        memset(g_ble_context.m_wl_uuid, 0, sizeof(mico_bt_uuid_t));
+        memcpy(g_ble_context.m_wl_uuid, uuid, sizeof(mico_bt_uuid_t));
+    } 
+
+exit:
+    return ret;
 }
 
 /**
@@ -587,7 +710,7 @@ mico_bt_result_t mico_ble_set_device_whitelist_uuid(const mico_bt_uuid_t *uuid)
  */
 const mico_bt_uuid_t *mico_ble_get_device_whitelist_uuid(void)
 {
-    return g_ble_context.m_wl_uuid;
+    return (const mico_bt_uuid_t *)g_ble_context.m_wl_uuid;
 }
 
 /**
@@ -671,7 +794,31 @@ mico_bt_result_t mico_ble_start_device_discovery(void)
  */
 mico_bt_result_t mico_ble_connect(mico_bt_device_address_t bdaddr)
 {
-    return MICO_BT_SUCCESS;
+    mico_bt_result_t ret = MICO_BT_BADOPTION;
+    mico_bt_smartbridge_socket_status_t status;
+    mico_bt_smart_device_t *remote_device = NULL;
+
+    if (SM_InState(&g_ble_context.m_sm, BLE_STATE_IDLE)) {
+        mico_bt_smartbridge_get_socket_status(&g_ble_context.m_central_socket, &status);
+        if (status == SMARTBRIDGE_SOCKET_DISCONNECTED) {
+            /* Construct mico_bt_smart_device_t */
+            remote_device = (mico_bt_smart_device_t *)malloc(sizeof(mico_bt_smart_device_t));
+            require_action_string(remote_device != NULL, exit, ret = MICO_BT_NO_RESOURCES, "Malloc failed");
+            memcpy(remote_device->address, bdaddr, 6);
+            remote_device->address_type = BT_SMART_ADDR_TYPE_PUBLIC;
+            /* Connecting... */
+            ret = mico_rtos_send_asynchronous_event(&g_ble_context.m_worker_thread, mico_ble_central_connect_handler, remote_device);
+            require_noerr_string(ret, exit, "Send asynchronous event failed");
+            /* Handle Event */
+            SM_Handle(&g_ble_context.m_sm, BLE_SM_EVT_CENTRAL_LECONN_CMD);
+        } 
+    }
+
+exit:
+    if (ret != MICO_BT_SUCCESS && remote_device) {
+        free(remote_device);
+    }
+    return ret;
 }
 
 /**
@@ -681,7 +828,25 @@ mico_bt_result_t mico_ble_connect(mico_bt_device_address_t bdaddr)
  */
 mico_bt_result_t mico_ble_disconnect(uint16_t connect_handle)
 {
-    return MICO_BT_SUCCESS;
+    mico_bt_result_t ret = MICO_BT_BADOPTION;
+
+    UNUSED_PARAMETER(connect_handle);
+
+    if (SM_InState(&g_ble_context.m_sm, BLE_STATE_PERIPHERAL_CONNECTED)) {
+        ret = mico_bt_peripheral_disconnect();
+        if (ret == MICO_BT_SUCCESS) {
+            SM_Handle(&g_ble_context.m_sm, BLE_SM_EVT_PERIPHERAL_DISCONNECTED);
+        }
+    }
+
+    if (SM_InState(&g_ble_context.m_sm, BLE_STATE_CENTRAL_CONNECTED)) {
+        ret = mico_bt_smartbridge_disconnect(&g_ble_context.m_central_socket, MICO_FALSE);
+        if (ret == MICO_BT_SUCCESS) {
+            SM_Handle(&g_ble_context.m_sm, BLE_SM_EVT_CENTRAL_DISCONNECTED);
+        }
+    }
+
+    return ret;
 }
 
 /**
@@ -808,7 +973,7 @@ static mico_bool_t mico_ble_post_evt(mico_ble_event_t evt, mico_ble_evt_params_t
         } 
 
         /* Post */
-        if (kNoErr != mico_rtos_send_asynchronous_event(&g_ble_context.m_worker_thread,
+        if (kNoErr != mico_rtos_send_asynchronous_event(&g_ble_context.m_evt_worker_thread,
                                                         ble_post_evt_handler, 
                                                         arg)) {
             /* Pending current RFCOMM Channel. */
@@ -823,4 +988,53 @@ static mico_bool_t mico_ble_post_evt(mico_ble_event_t evt, mico_ble_evt_params_t
     }
 
     return MICO_TRUE;
+}
+
+uint8_t *bdaddr_aton(const char *addr, uint8_t *out_addr)
+{
+    uint8_t val = 0, i = BD_ADDR_LEN;
+
+    while (*addr) {
+        if (*addr >= '0' && *addr <= '9') {
+            val = (uint8_t)((val << 4) + *addr - '0');
+        } else if (*addr >= 'A' && *addr <= 'F') {
+            val = (uint8_t)((val << 4) + *addr - 'A' + 10);
+        } else if (*addr >= 'a' && *addr <= 'f') {
+            val = (uint8_t)((val << 4) + *addr - 'a' + 10);
+        } else {
+            out_addr[--i] = val;
+        }
+        addr++;
+    }
+
+    out_addr[--i] = val;
+    return out_addr;
+}
+
+char *bdaddr_ntoa(const uint8_t *addr, char *addr_str)
+{
+    char *bp = addr_str;
+    uint8_t u, l;
+    int8_t  i = BD_ADDR_LEN;
+
+    while (i > 0) {
+        u = (uint8_t)(addr[i - 1] / 16);
+        l = (uint8_t)(addr[i - 1] % 16);
+
+        if (u < 10) {
+            *bp++ = (uint8_t)('0' + u);
+        } else {
+            *bp++ = (uint8_t)('A' + u - 10);
+        }
+
+        if (l < 10) {
+            *bp++ = (uint8_t)('0' + l);
+        } else {
+            *bp++ = (uint8_t)('A' + l - 10);
+        }
+        *bp++ = ':';
+        i--;
+    }
+    *--bp = 0;
+    return addr_str;
 }

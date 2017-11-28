@@ -39,7 +39,7 @@
 #include "mico_ble_lib.h"
 
 #define BT_MAGIC_NUMBER         0x672b123e
-#define BT_DEVICE_NAME_LEN      32
+#define BT_DEVICE_NAME_LEN      31
 
 /* Log api */
 #define at_ble_log(fmt, ...) at_log("ble", fmt, ##__VA_ARGS__)
@@ -149,13 +149,13 @@ OSStatus at_cmd_register_ble_component(void)
         }
 
         if (g_ble_context.p_config->is_enable_event) {
-            sprintf(response, "%s+LEEVENT:INIT,%s%s", AT_PROMPT, "ON", AT_PROMPT);
+            sprintf(response, "%s+LEINIT:%s%s", AT_PROMPT, "ON", AT_PROMPT);
         }
     } else if (result == MICO_BT_PENDING) {
         /* Process in @ble_event_handle */
     } else {
         if (g_ble_context.p_config->is_enable_event) {
-            sprintf(response, "%s+LEEVENT:INIT,%s%s", AT_PROMPT, "OFF", AT_PROMPT);
+            sprintf(response, "%s+LEINIT:%s%s", AT_PROMPT, "OFF", AT_PROMPT);
         }
         at_ble_log("Initialising BLE Library failed");
         err = result;
@@ -172,7 +172,8 @@ exit:
 static OSStatus ble_event_handle(mico_ble_event_t  event, const mico_ble_evt_params_t  *params)
 {
     OSStatus err = kNoErr;
-    char response[50] = {0};
+    char response[100] = {0};
+    char str_addr[BDADDR_NTOA_SIZE] = {0};
 
     switch (event) {
         case BLE_EVT_INIT:
@@ -189,12 +190,12 @@ static OSStatus ble_event_handle(mico_ble_event_t  event, const mico_ble_evt_par
                 }
             }
 
-            /* +LEEVENT:INIT,ON */
+            /* +LEINIT:ON */
             if (g_ble_context.p_config->is_enable_event) {
                 if (params->u.init.status == MICO_BT_SUCCESS) {
-                    sprintf(response, "%s+LEEVENT:INIT,%s%s", AT_PROMPT, "ON", AT_PROMPT);
+                    sprintf(response, "%s+LEINIT:ON%s", AT_PROMPT, AT_PROMPT);
                 } else {
-                    sprintf(response, "%s+LEEVENT:INIT,%s%s", AT_PROMPT, "OFF", AT_PROMPT);
+                    sprintf(response, "%s+LEINIT:OFF%s", AT_PROMPT, AT_PROMPT);
                 }
                 uart_driver_struct_get()->write((uint8_t *)response, strlen(response));
             }
@@ -202,52 +203,52 @@ static OSStatus ble_event_handle(mico_ble_event_t  event, const mico_ble_evt_par
         case BLE_EVT_PERIPHREAL_ADV_START:
             at_ble_log("Advertising is started");
             if (g_ble_context.p_config->is_enable_event) {
-                sprintf(response, "%s+LEEVENT,ADV,ON%s", AT_PROMPT, AT_PROMPT);
+                sprintf(response, "%s+LEADV:ON%s", AT_PROMPT, AT_PROMPT);
                 uart_driver_struct_get()->write((uint8_t *)response, strlen(response));
             }
             break;
         case BLE_EVT_PERIPHERAL_ADV_STOP:
             at_ble_log("Advertising is stoped");
             if (g_ble_context.p_config->is_enable_event) {
-                sprintf(response, "%s+LEEVENT,ADV,OFF%s", AT_PROMPT, AT_PROMPT);
+                sprintf(response, "%s+LEADV:OFF%s", AT_PROMPT, AT_PROMPT);
                 uart_driver_struct_get()->write((uint8_t *)response, strlen(response));
             }
             break;
         case BLE_EVT_PERIPHERAL_CONNECTED:
             at_ble_log("A remote device is connected");
             if (g_ble_context.p_config->is_enable_event) {
-                /* +LEEVENT:CONNECTION,ON */
-                sprintf(response, "%s+LEEVENT:CONN,%s%s", AT_PROMPT, "ON", AT_PROMPT);
+                /* +LEPCONN:ON,<addr>,<handle> */
+                sprintf(response, "%s+LEPCONN:ON,%s,0x%04x%s", AT_PROMPT, bdaddr_ntoa(params->bd_addr, str_addr), params->u.conn.handle, AT_PROMPT);
                 uart_driver_struct_get()->write((uint8_t *)response, strlen(response));
             }
             break;
-        case BLE_EVT_PERIPHREAL_DISCONNECTED:
+        case BLE_EVT_PERIPHERAL_DISCONNECTED:
             at_ble_log("The remote device is disconnected");
             if (g_ble_context.p_config->is_enable_event) {
-                /* +LEEVENT:CONNECTION,OFF */
-                sprintf(response, "%s+LEEVENT:CONN,%s%s", AT_PROMPT, "OFF", AT_PROMPT);
+                /* +LEPCONN:OFF */
+                sprintf(response, "%s+LEPCONN:OFF,0x%04x%s", AT_PROMPT, params->u.disconn.handle, AT_PROMPT);
                 uart_driver_struct_get()->write((uint8_t *)response, strlen(response));
             }
             break;
         case BLE_EVT_CENTRAL_SCAN_START:
             at_ble_log("Scanning is started");
             if (g_ble_context.p_config->is_enable_event) {
-                sprintf(response, "%s+LEEVENT,SCAN,ON%s", AT_PROMPT, AT_PROMPT);
+                sprintf(response, "%s+LESCAN:ON%s", AT_PROMPT, AT_PROMPT);
                 uart_driver_struct_get()->write((uint8_t *)response, strlen(response));
             }
             break;
         case BLE_EVT_CENTRAL_SCAN_STOP:
             at_ble_log("Scanning is stoped");
             if (g_ble_context.p_config->is_enable_event) {
-                sprintf(response, "%s+LEEVENT,SCAN,OFF%s", AT_PROMPT, AT_PROMPT);
+                sprintf(response, "%s+LESCAN:OFF%s", AT_PROMPT, AT_PROMPT);
                 uart_driver_struct_get()->write((uint8_t *)response, strlen(response));
             }
             break;
         case BLE_EVT_CENTRAL_CONNECTED:
             at_ble_log("A remote device is connected");
             if (g_ble_context.p_config->is_enable_event) {
-                /* +LEEVENT:CONNECTION,ON */
-                sprintf(response, "%s+LEEVENT:CONN,%s%s", AT_PROMPT, "ON", AT_PROMPT);
+                /* +LESCONN:ON */
+                sprintf(response, "%s+LESCONN:ON,%s,0x%04x%s,", AT_PROMPT, bdaddr_ntoa(params->bd_addr, str_addr), params->u.conn.handle, AT_PROMPT);
                 uart_driver_struct_get()->write((uint8_t *)response, strlen(response));
             }
             break;
@@ -257,8 +258,8 @@ static OSStatus ble_event_handle(mico_ble_event_t  event, const mico_ble_evt_par
         case BLE_EVT_CENTRAL_DISCONNECTED:
             at_ble_log("A remote device is disconnected");
             if (g_ble_context.p_config->is_enable_event) {
-                /* +LEEVENT:CONNECTION,ON */
-                sprintf(response, "%s+LEEVENT:CONN,%s%s", AT_PROMPT, "OFF", AT_PROMPT);
+                /* +LESCONN:ON */
+                sprintf(response, "%s+LESCONN:OFF,0x%04x%s", AT_PROMPT, params->u.disconn.handle, AT_PROMPT);
                 uart_driver_struct_get()->write((uint8_t *)response, strlen(response));
             }
             break;
@@ -268,8 +269,8 @@ static OSStatus ble_event_handle(mico_ble_event_t  event, const mico_ble_evt_par
                 || mico_ble_get_device_state() == BLE_STATE_CENTRAL_CONNECTED) {
 
                 if (g_ble_context.p_config->is_at_mode && g_ble_context.p_config->is_enable_event) {
-                    /* +LEEVENT:DATA,<length>,xxxx */
-                    sprintf(response, "%s+LEEVENT,DATA:%d,", AT_PROMPT, params->u.data.length);
+                    /* +LEDATA:<length>,xxxx */
+                    sprintf(response, "%s+LEDATA:%d,", AT_PROMPT, params->u.data.length);
                     uart_driver_struct_get()->write((uint8_t *) response, strlen(response));
                 }
                 if (uart_driver_struct_get()->write(params->u.data.p_data, params->u.data.length) != kNoErr) {
@@ -278,7 +279,16 @@ static OSStatus ble_event_handle(mico_ble_event_t  event, const mico_ble_evt_par
             }
             break;
         case BLE_EVT_CENTRAL_REPORT:
-            at_ble_log("An new device: %s [%d]", params->u.report.addr, params->u.report.rssi);
+            bdaddr_ntoa(params->bd_addr, str_addr);
+            at_ble_log("An new device: %s [%s] [%d]", 
+                        params->u.report.name, 
+                        str_addr,
+                        params->u.report.rssi);
+            if (g_ble_context.p_config->is_at_mode && g_ble_context.p_config->is_enable_event) {
+                /* +LEREPORT:<name>,<addr>,<rssi> */
+                sprintf(response, "%s+LEREPORT:%s,%s,%d%s", AT_PROMPT, params->u.report.name, str_addr, params->u.report.rssi, AT_PROMPT);
+                uart_driver_struct_get()->write((uint8_t *)response, strlen(response));
+            }
             break;
         default:
             at_ble_log("Unhandled event");
@@ -462,7 +472,7 @@ static void ble_send_rawdata(at_cmd_driver_t *driver)
     require_string(msg != NULL, err_exit, "Malloc failed");
 
     /* Set discoverable */
-    mico_ble_start_device_discovery();
+    // mico_ble_start_device_discovery();
 
     /* Response to user. */
     sprintf(response, "%s", AT_RESPONSE_OK);
@@ -688,19 +698,19 @@ static void ble_get_state(at_cmd_driver_t *driver)
 
     switch (mico_ble_get_device_state()) {
         case BLE_STATE_PERIPHERAL_ADVERTISING:
-            idx = sprintf(response, "%s+LESTATE,ADV%s", AT_PROMPT, AT_PROMPT);
+            idx = sprintf(response, "%s+LESTATE:ADV%s", AT_PROMPT, AT_PROMPT);
             break;
         case BLE_STATE_PERIPHERAL_CONNECTED:
-            idx = sprintf(response, "%s+LESTATE,CONN%s", AT_PROMPT, AT_PROMPT);
+            idx = sprintf(response, "%s+LESTATE:CONN%s", AT_PROMPT, AT_PROMPT);
             break;
         case BLE_STATE_CENTRAL_CONNECTED:
-            idx = sprintf(response, "%s+LESTATE,CONN%s", AT_PROMPT, AT_PROMPT);
+            idx = sprintf(response, "%s+LESTATE:CONN%s", AT_PROMPT, AT_PROMPT);
             break;
         case BLE_STATE_CENTRAL_SCANNING:
-            idx = sprintf(response, "%s+LESTATE,SCAN%s", AT_PROMPT, AT_PROMPT);
+            idx = sprintf(response, "%s+LESTATE:SCAN%s", AT_PROMPT, AT_PROMPT);
             break;
         case BLE_STATE_CENTRAL_CONNECTING:
-            idx = sprintf(response, "%s+LESTATE,CONNING%s", AT_PROMPT, AT_PROMPT);
+            idx = sprintf(response, "%s+LESTATE:CONNING%s", AT_PROMPT, AT_PROMPT);
             break;
         default:
             at_ble_log("Unknown state");
@@ -840,53 +850,3 @@ static mico_bt_result_t ble_default_config(at_cmd_ble_config_t *config)
     config->is_enable_event = MICO_TRUE;
     return MICO_BT_SUCCESS;
 }
-
-uint8_t *bdaddr_aton(const char *addr, uint8_t *out_addr)
-{
-    uint8_t val = 0, i = BD_ADDR_LEN;
-
-    while (*addr) {
-        if (*addr >= '0' && *addr <= '9') {
-            val = (uint8_t)((val << 4) + *addr - '0');
-        } else if (*addr >= 'A' && *addr <= 'F') {
-            val = (uint8_t)((val << 4) + *addr - 'A' + 10);
-        } else if (*addr >= 'a' && *addr <= 'f') {
-            val = (uint8_t)((val << 4) + *addr - 'a' + 10);
-        } else {
-            out_addr[--i] = val;
-        }
-        addr++;
-    }
-
-    out_addr[--i] = val;
-    return out_addr;
-}
-
-char *bdaddr_ntoa(const uint8_t *addr, char *addr_str)
-{
-    char *bp = addr_str;
-    uint8_t u, l;
-    int8_t  i = BD_ADDR_LEN;
-
-    while (i > 0) {
-        u = (uint8_t)(addr[i - 1] / 16);
-        l = (uint8_t)(addr[i - 1] % 16);
-
-        if (u < 10) {
-            *bp++ = (uint8_t)('0' + u);
-        } else {
-            *bp++ = (uint8_t)('A' + u - 10);
-        }
-
-        if (l < 10) {
-            *bp++ = (uint8_t)('0' + l);
-        } else {
-            *bp++ = (uint8_t)('A' + l - 10);
-        }
-        *bp++ = ':';
-        i--;
-    }
-    *--bp = 0;
-    return addr_str;
-}
-

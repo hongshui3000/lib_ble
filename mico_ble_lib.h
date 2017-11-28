@@ -67,7 +67,7 @@ typedef enum {
     BLE_EVT_PERIPHREAL_ADV_START,
     BLE_EVT_PERIPHERAL_ADV_STOP,
     BLE_EVT_PERIPHERAL_CONNECTED,
-    BLE_EVT_PERIPHREAL_DISCONNECTED,
+    BLE_EVT_PERIPHERAL_DISCONNECTED,
     BLE_EVT_DATA,
     BLE_EVT_CENTRAL_SCAN_START,
     BLE_EVT_CENTRAL_SCAN_STOP,
@@ -90,6 +90,16 @@ typedef struct {
             mico_bt_result_t status;
         } init;
 
+        /* valid if BLE_EVT_PERIPHERAL_CONNECTED or BLE_EVT_CENTRAL_CONNECTED */
+        struct {
+            uint16_t handle;
+        } conn;
+
+        /* valid if BLE_EVT_PERIPHERAL_DISCONNECTED or BLE_EVT_CENTRAL_DISCONNECTED */
+        struct {
+            uint16_t handle;
+        } disconn;
+
         /* valid if BLE_EVT_DATA */
         struct {
             uint8_t *p_data;
@@ -97,8 +107,8 @@ typedef struct {
         } data;
 
         /* valid if BLE_EVT_CENTRAL_REPORT */
-        struct {
-            mico_bt_device_address_t addr;
+        struct { 
+            char   name[31];
             int8_t rssi;
         } report;
     } u;
@@ -267,6 +277,7 @@ mico_ble_state_t mico_ble_get_device_state(void);
  */
 mico_bt_result_t mico_ble_send_data(const uint8_t *p_data, uint32_t length, uint32_t timeout_ms);
 
+#define BDADDR_NTOA_SIZE 18
 uint8_t *bdaddr_aton(const char *addr, uint8_t *out_addr);
 char *bdaddr_ntoa(const uint8_t *addr, char *addr_str);
 
