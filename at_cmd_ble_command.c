@@ -53,7 +53,6 @@ typedef struct {
     mico_bool_t is_enable_event;
     char        device_name[BT_DEVICE_NAME_LEN];    // c-style string
     char        whitelist_name[BT_DEVICE_NAME_LEN];     // c-style string
-    mico_bt_uuid_t whitelist_uuid;
 } at_cmd_ble_config_t;
 #pragma pack()
 
@@ -81,8 +80,6 @@ static void ble_set_event_mask(at_cmd_driver_t *driver, at_cmd_para_t *para);
 static void ble_get_event_mask(at_cmd_driver_t *driver);
 static void ble_get_whitelist_name(at_cmd_driver_t *driver);
 static void ble_set_whitelist_name(at_cmd_driver_t *driver, at_cmd_para_t *para);
-static void ble_set_whitelist_uuid(at_cmd_driver_t *driver, at_cmd_para_t *para);
-static void ble_get_whitelist_uuid(at_cmd_driver_t *driver);
 
 static at_cmd_ble_context_t g_ble_context;
 
@@ -98,7 +95,7 @@ static const struct at_cmd_command g_ble_cmds[] = {
 
         /* BLE Central */
         { "AT+LEWLNAME",    ble_get_whitelist_name, ble_set_whitelist_name,         NULL,                       NULL },
-        { "AT+LEWLUUID",    ble_get_whitelist_uuid, ble_set_whitelist_uuid,         NULL,                       NULL },
+        // { "AT+LEWLUUID",    ble_get_whitelist_uuid, ble_set_whitelist_uuid,         NULL,                       NULL },
         { "AT+LESCAN",      NULL,                   ble_set_scan_mode,              NULL,                       NULL },
         { "AT+LECONN",      NULL,                   ble_gap_connect,                NULL,                       NULL },
 
@@ -132,7 +129,6 @@ OSStatus at_cmd_register_ble_component(void)
 
     result = mico_ble_init(g_ble_context.p_config->device_name,
                            g_ble_context.p_config->whitelist_name,
-                           &g_ble_context.p_config->whitelist_uuid,
                            g_ble_context.p_config->is_central,
                            ble_event_handle);
 
@@ -361,54 +357,6 @@ static void ble_get_device_addr(at_cmd_driver_t *driver)
             AT_RESPONSE_OK);
     driver->write((uint8_t *)response, strlen(response));
 }
-
-/**
- * AT+LEPASSKEY=<xxx>
- * OK
- */
-// static void ble_set_passkey(at_cmd_driver_t *driver, at_cmd_para_t *para)
-// {
-//     char response[50];
-
-//     if (para->para_num != 1) {
-//         sprintf(response, "%s", AT_RESPONSE_ERR);
-//         goto exit;
-//     }
-
-//     char *passkey = at_cmd_parse_get_string(para->para, 1);
-//     if (strlen(passkey) != BT_DEVICE_PASSKEY_LEN - 1) {
-//         sprintf(response, "%s", AT_RESPONSE_ERR);
-//         goto exit;
-//     }
-
-//     if (mico_bt_rfcomm_set_device_passkey(passkey) != MICO_BT_SUCCESS) {
-//         sprintf(response, "%s", AT_RESPONSE_ERR);
-//     } else {
-//         strcpy(g_ble_context.p_config->passkey, passkey);
-//         at_cmd_config_data_write();
-
-//         sprintf(response, "%s", AT_RESPONSE_OK);
-//     }
-
-// exit:
-//     driver->write((uint8_t *)response, strlen(response));
-// }
-
-/**
- * AT+LEPASSKEY=?
- * +LEPASSKEY:<passkey>
- * OK
- */
-// static void ble_get_passkey(at_cmd_driver_t *driver)
-// {
-//     char response[50];
-
-//     sprintf(response, "%s+LEPASSKEY:%s%s",
-//             AT_PROMPT,
-//             mico_bt_rfcomm_get_device_passkey(),
-//             AT_RESPONSE_OK);
-//     driver->write((uint8_t *)response, strlen(response));
-// }
 
 /**
  * AT+LEEVENT=<ON/OFF>
@@ -776,61 +724,6 @@ exit:
 }
 
 /**
- * AT+LEWLUUID=?
- * 
- * +LEWLUUID:<UUID>
- * OK
- */
-static void ble_get_whitelist_uuid(at_cmd_driver_t *driver)
-{
-    UNUSED_PARAMETER(driver);
-//    char response[50];
-//
-//    sprintf(response, "%s+LEWLUUID:%s%s",
-//            AT_PROMPT,
-//            mico_ble_get_device_whitelist_name(),
-//            AT_RESPONSE_OK);
-//    driver->write((uint8_t *) response, strlen(response));
-}
-
-/**
- * AT+LEWLUUID=<UUID>
- * 
- * OK or ERR
- */
-static void ble_set_whitelist_uuid(at_cmd_driver_t *driver, at_cmd_para_t *para)
-{
-    UNUSED_PARAMETER(driver);
-    UNUSED_PARAMETER(para);
-
-//    char response[50];
-//
-//    if (para->para_num != 1) {
-//        sprintf(response, "%s", AT_RESPONSE_ERR);
-//        goto exit;
-//    }
-//
-//    char *name = at_cmd_parse_get_string(para->para, 1);
-//    if (strlen(name) > BT_DEVICE_NAME_LEN - 1) {
-//        sprintf(response, "%s", AT_RESPONSE_ERR);
-//        goto exit;
-//    }
-//
-//    if (mico_ble_set_device_whitelist_name(name) != MICO_BT_SUCCESS) {
-//        sprintf(response, "%s", AT_RESPONSE_ERR);
-//    } else {
-//        strcpy(g_ble_context.p_config->whitelist_name, name);
-//        at_cmd_config_data_write();
-//
-//        sprintf(response, "%s", AT_RESPONSE_OK);
-//    }
-//
-//exit:
-//    driver->write((uint8_t *) response, strlen(response));
-}
-
-
-/**
  *
  * @param config
  * @return
@@ -843,7 +736,6 @@ static mico_bt_result_t ble_default_config(at_cmd_ble_config_t *config)
     strcpy(config->device_name, "MXCHIP_BT123456");
 
     memset(config->whitelist_name, 0, BT_DEVICE_NAME_LEN);
-    memset(&config->whitelist_uuid, 0, sizeof(mico_bt_uuid_t));
 
     config->is_central = MICO_FALSE; /* Default into periphreal */
     config->is_at_mode = MICO_TRUE; /* AT Command Mode for default configuration */

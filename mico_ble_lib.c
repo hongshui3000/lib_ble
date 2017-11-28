@@ -83,7 +83,6 @@ typedef struct {
     mico_ble_evt_cback_t m_cback;
 
     char                *m_wl_name;
-    mico_bt_uuid_t      *m_wl_uuid;
     uint16_t             m_central_attr_handle;
 
     mico_worker_thread_t m_worker_thread;
@@ -92,7 +91,7 @@ typedef struct {
     mico_bt_peripheral_socket_t  m_peripheral_socket;
 } mico_ble_context_t;
 
-static mico_bool_t mico_ble_check_uuid(const mico_bt_uuid_t *uuid);
+// static mico_bool_t mico_ble_check_uuid(const mico_bt_uuid_t *uuid);
 static mico_bool_t mico_ble_post_evt(mico_ble_event_t evt, mico_ble_evt_params_t *parms);
 static mico_bt_result_t mico_ble_set_device_discovery(mico_bool_t start);
 static mico_bt_result_t mico_ble_set_device_scan(mico_bool_t start);
@@ -323,11 +322,15 @@ static OSStatus mico_ble_central_scan_result_handler(const mico_bt_smart_adverti
     char str_addr[BDADDR_NTOA_SIZE] = {0};
     mico_ble_evt_params_t evt_params;
 
-    mico_ble_log("Scan result: %s", bdaddr_ntoa(scan_result->remote_device.address, str_addr));
-
-    memset(&evt_params, 0, sizeof(evt_params));
+    if (scan_result->signal_strength >= 0) {
+        return kUnknownErr;
+    }
 
     if (scan_result->event == BT_SMART_CONNECTABLE_UNDIRECTED_ADVERTISING_EVENT) {
+
+        mico_ble_log("Scan result: %s", bdaddr_ntoa(scan_result->remote_device.address, str_addr));
+        memset(&evt_params, 0, sizeof(evt_params));
+
         if ((!g_ble_context.m_wl_name && strlen(scan_result->remote_device.name) > 0)
             || (g_ble_context.m_wl_name 
                 && memcmp(g_ble_context.m_wl_name, scan_result->remote_device.name, strlen(g_ble_context.m_wl_name)) == 0)) {
@@ -382,8 +385,8 @@ static OSStatus mico_ble_central_connect_handler(void *arg)
             uint8_t attribute_buffer[100];
             mico_bt_smart_attribute_t *attribute = (mico_bt_smart_attribute_t *)attribute_buffer;
             ret = mico_bt_smartbridge_get_service_from_attribute_cache_by_uuid(&g_ble_context.m_central_socket, 
-                                                                               &g_central_whitelist_serv_uuid, 0x00, 
-                                                                               0xffff, attribute, 100);
+                                                                               &g_central_whitelist_serv_uuid, 
+                                                                               0x00, 0xffff, attribute, 100);
             require_noerr_action_string(ret, exit, mico_bt_smartbridge_disconnect(&g_ble_context.m_central_socket, MICO_FALSE), 
                                          "The specified GATT Service not found, disconnect.");
 
@@ -414,7 +417,7 @@ exit:
     return ret;
 }
 
-static mico_bt_result_t mico_ble_central_device_init(const char *whitelist_name, const mico_bt_uuid_t *whitelist_uuid)
+static mico_bt_result_t mico_ble_central_device_init(void)
 {
     OSStatus err = mico_bt_smartbridge_init(1);
     require_noerr(err, exit);
@@ -534,8 +537,7 @@ static void mico_ble_state_machine_init(StateMachine *sm, uint8_t init_state)
  *
  */
 mico_bt_result_t mico_ble_init(const char *device_name, 
-                               const char *whitelist_name, 
-                               const mico_bt_uuid_t *whitelist_uuid, 
+                               const char *wl_name, 
                                mico_bool_t is_central, 
                                mico_ble_evt_cback_t cback) 
 {
@@ -557,7 +559,7 @@ mico_bt_result_t mico_ble_init(const char *device_name,
     err = mico_bt_init(MICO_BT_HCI_MODE, device_name, 1, 1);
     require_string(err == MICO_BT_SUCCESS, exit, "Error initializing MiCO Bluetooth Framework");
 
-    err = mico_ble_central_device_init(whitelist_name, whitelist_uuid);
+    err = mico_ble_central_device_init();
     require_string(err == MICO_BT_SUCCESS, exit, "Error initializing MiCO Bluetooth Central Role");
 
     err = mico_ble_peripheral_device_init();
@@ -578,8 +580,7 @@ mico_bt_result_t mico_ble_init(const char *device_name,
     g_ble_context.m_is_central = is_central;
     g_ble_context.m_cback = cback;
     g_ble_context.m_is_initialized = MICO_TRUE;
-    mico_ble_set_device_whitelist_name(whitelist_name);
-    mico_ble_set_device_whitelist_uuid(whitelist_uuid);
+    mico_ble_set_device_whitelist_name(wl_name);
 
     /* Initialize StateMachine */
     mico_ble_state_machine_init(&g_ble_context.m_sm, init_state);
@@ -685,22 +686,22 @@ const char *mico_ble_get_device_whitelist_name(void)
  * @return
  *      MICO_BT_SUCCESS if successfully.
  */
-mico_bt_result_t mico_ble_set_device_whitelist_uuid(const mico_bt_uuid_t *uuid)
-{
-    mico_bt_result_t ret = MICO_BT_BADARG;
+// mico_bt_result_t mico_ble_set_device_whitelist_uuid(const mico_bt_uuid_t *uuid)
+// {
+//     mico_bt_result_t ret = MICO_BT_BADARG;
 
-    if (uuid && mico_ble_check_uuid(uuid)) {
-        if (!g_ble_context.m_wl_uuid) {
-            g_ble_context.m_wl_uuid = (mico_bt_uuid_t *)malloc(sizeof(mico_bt_uuid_t));
-            require_action(g_ble_context.m_wl_uuid, exit, ret = MICO_BT_NO_RESOURCES);
-        }
-        memset(g_ble_context.m_wl_uuid, 0, sizeof(mico_bt_uuid_t));
-        memcpy(g_ble_context.m_wl_uuid, uuid, sizeof(mico_bt_uuid_t));
-    } 
+//     if (uuid && mico_ble_check_uuid(uuid)) {
+//         if (!g_ble_context.m_wl_serv_uuid) {
+//             g_ble_context.m_wl_serv_uuid = (mico_bt_uuid_t *)malloc(sizeof(mico_bt_uuid_t));
+//             require_action(g_ble_context.m_wl_serv_uuid, exit, ret = MICO_BT_NO_RESOURCES);
+//         }
+//         memset(g_ble_context.m_wl_serv_uuid, 0, sizeof(mico_bt_uuid_t));
+//         memcpy(g_ble_context.m_wl_serv_uuid, uuid, sizeof(mico_bt_uuid_t));
+//     } 
 
-exit:
-    return ret;
-}
+// exit:
+//     return ret;
+// }
 
 /**
  * Get passkey for BT Security process.
@@ -708,10 +709,10 @@ exit:
  * @return
  *  A c-style string of local device passkey.
  */
-const mico_bt_uuid_t *mico_ble_get_device_whitelist_uuid(void)
-{
-    return (const mico_bt_uuid_t *)g_ble_context.m_wl_uuid;
-}
+// const mico_bt_uuid_t *mico_ble_get_device_whitelist_uuid(void)
+// {
+//     return (const mico_bt_uuid_t *)g_ble_context.m_wl_serv_uuid;
+// }
 
 /**
  *
@@ -893,24 +894,24 @@ mico_bt_result_t mico_ble_send_data(const uint8_t *p_data, uint32_t length, uint
  *      MICO_FALSE -- invalid
  *      MICO_TRUE  -- valid 
  */
-static mico_bool_t mico_ble_check_uuid(const mico_bt_uuid_t *uuid)
-{
-    if (!uuid) {
-        return MICO_FALSE;
-    }
+// static mico_bool_t mico_ble_check_uuid(const mico_bt_uuid_t *uuid)
+// {
+//     if (!uuid) {
+//         return MICO_FALSE;
+//     }
 
-    if (uuid->len == LEN_UUID_16) {
-        return (uuid->uu.uuid16 > (uint16_t)0 && uuid->uu.uuid16 < (uint16_t)(-1));
-    } else if (uuid->len == LEN_UUID_32) {
-        return (uuid->uu.uuid32 > (uint32_t)0 && uuid->uu.uuid32 < (uint32_t)(-1));
-    } else if (uuid->len == LEN_UUID_128) {
-        const uint8_t *p = uuid->uu.uuid128;
-        while (p < &uuid->uu.uuid128[LEN_UUID_128] && *p++ == 0);
-        return (p != &uuid->uu.uuid128[LEN_UUID_128]);
-    } else {
-        return MICO_FALSE;
-    }
-}
+//     if (uuid->len == LEN_UUID_16) {
+//         return (uuid->uu.uuid16 > (uint16_t)0 && uuid->uu.uuid16 < (uint16_t)(-1));
+//     } else if (uuid->len == LEN_UUID_32) {
+//         return (uuid->uu.uuid32 > (uint32_t)0 && uuid->uu.uuid32 < (uint32_t)(-1));
+//     } else if (uuid->len == LEN_UUID_128) {
+//         const uint8_t *p = uuid->uu.uuid128;
+//         while (p < &uuid->uu.uuid128[LEN_UUID_128] && *p++ == 0);
+//         return (p != &uuid->uu.uuid128[LEN_UUID_128]);
+//     } else {
+//         return MICO_FALSE;
+//     }
+// }
 
 /* Handle an event for POST EVENT To User Layer. */
 static OSStatus ble_post_evt_handler(void *arg)

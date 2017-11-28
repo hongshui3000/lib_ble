@@ -148,7 +148,6 @@ typedef OSStatus (*mico_ble_evt_cback_t)(mico_ble_event_t event, const mico_ble_
  */
 mico_bt_result_t mico_ble_init(const char *name, 
                                const char *whitelist_name, 
-                               const mico_bt_uuid_t *whitelist_uuid, 
                                mico_bool_t is_central, 
                                mico_ble_evt_cback_t cback);
 
@@ -208,7 +207,7 @@ const char *mico_ble_get_device_whitelist_name(void);
  * @return
  *      MICO_BT_SUCCESS if successfully.
  */
-mico_bt_result_t mico_ble_set_device_whitelist_uuid(const mico_bt_uuid_t *uuid);
+// mico_bt_result_t mico_ble_set_device_whitelist_uuid(const mico_bt_uuid_t *uuid);
 
 /**
  * Get passkey for BT Security process.
@@ -216,7 +215,7 @@ mico_bt_result_t mico_ble_set_device_whitelist_uuid(const mico_bt_uuid_t *uuid);
  * @return
  *  A c-style string of local device passkey.
  */
-const mico_bt_uuid_t *mico_ble_get_device_whitelist_uuid(void);
+// const mico_bt_uuid_t *mico_ble_get_device_whitelist_uuid(void);
 
 /**
  *
