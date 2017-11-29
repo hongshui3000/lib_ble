@@ -499,74 +499,36 @@ exit:
 }
 
 /**
- * //AT+LESCAN=<ON/OFF>
  * AT+LESCAN
  * OK or ERR
  */
 static void ble_set_scan_mode(at_cmd_driver_t *driver)
 {
-//    mico_bool_t start;
-    char response[50];//, *params;
+    char response[50];
 
-//    if (para->para_num != 1) {
-//        sprintf(response, "%s", AT_RESPONSE_ERR);
-//        goto exit;
-//    }
-//
-//    params = at_cmd_parse_get_string(para->para, 1);
-//    if (strcmp(params, "ON") == 0) {
-//        start = MICO_TRUE;
-//    } else if (strcmp(params, "OFF") == 0) {
-//        start = MICO_FALSE;
-//    } else {
-//        sprintf(response, "%s", AT_RESPONSE_ERR);
-//        goto exit;
-//    }
-
-//    if (MICO_BT_SUCCESS != mico_ble_set_device_scan(start)) {
     if (MICO_BT_SUCCESS != mico_ble_start_device_scan()) {
         sprintf(response, "%s", AT_RESPONSE_ERR);
     } else {
         sprintf(response, "%s", AT_RESPONSE_OK);
     }
 
-//exit:
     driver->write((uint8_t *)response, strlen(response));
 }
 
 /**
- * //AT+LEADV=<ON/OFF>
  * AT+LEADV
  * OK or ERR
  */
 static void ble_set_advertisement_mode(at_cmd_driver_t *driver)
 {
-//    mico_bool_t  start;
-    char response[50];//, *params;
+    char response[50];
 
-//    if (para->para_num != 1) {
-//        sprintf(response, "%s", AT_RESPONSE_ERR);
-//        goto exit;
-//    }
-//
-//    params = at_cmd_parse_get_string(para->para, 1);
-//    if (strcmp(params, "ON") == 0) {
-//        start = MICO_TRUE;
-//    } else if (strcmp(params, "OFF") == 0) {
-//        start = MICO_FALSE;
-//    } else {
-//        sprintf(response, "%s", AT_RESPONSE_ERR);
-//        goto exit;
-//    }
-
-//    if (MICO_BT_SUCCESS != mico_ble_set_device_discovery(start)) {
     if (MICO_BT_SUCCESS != mico_ble_start_device_discovery()) {
         sprintf(response, "%s", AT_RESPONSE_ERR);
     } else {
         sprintf(response, "%s", AT_RESPONSE_OK);
     }
 
-//exit:
     driver->write((uint8_t *)response, strlen(response));
 }
 
