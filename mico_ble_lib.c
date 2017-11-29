@@ -19,6 +19,9 @@
 
 #define mico_ble_log(M, ...) custom_log("BLE", M, ##__VA_ARGS__)
 
+/*-----------------------------------------------------------------------------------------
+ * Configuration 
+ */
 #define APP_MANUFACTURE "MXCHIP"
 #define APP_MODEL       "123456"
 #define APP_SYSTEM_ID   "001122"
@@ -26,15 +29,40 @@
 #define BLUETOOTH_PRINT_SERVICE_UUID    0x18F0
 #define BLUETOOTH_PRINT_CHAR_CMD_UUID   0x2AF1
 
+/*------------------------------------------------------------------------------------------
+ * GATT Service UUID & Handle
+ */
+
+/* UUID value of the SPP Service */
+#define UUID_SPP_SERVICE                        0x5E, 0x67, 0x21, 0x8A, 0x3f, 0x4b, 0x4D, 0x32, 0x91, 0x36, 0x38, 0xE3, 0xD8, 0xED, 0x63, 0x71
+/* UUID value of the SPP Characteristic, Data In */
+#define UUID_SPP_SERVICE_CHARACTERISTIC_IN      0x45, 0x39, 0x3E, 0x90, 0x24, 0x1D, 0x21, 0x78, 0x32, 0x70, 0x21, 0x35, 0xB4, 0xBA, 0xAE, 0xE2
+/* UUID value of the SPP Characteristic, Data OUT */
+#define UUID_SPP_SERVICE_CHARACTERISTIC_OUT     0x32, 0x15, 0x1a, 0x5e, 0x82, 0x2e, 0x12, 0x2a, 0x91, 0x43, 0x27, 0x52, 0xba, 0x1d, 0xf3, 0x30
+
 /* The handle of Custom GATT Service attribute.  */
 enum {
-    HDLS_DEV_INFO = 0x01,
-    HDLC_DEV_INFO_MFR_NAME,
-    HDLC_DEV_INFO_MFR_NAME_VALUE,
-    HDLC_DEV_INFO_MODEL_NUM,
-    HDLC_DEV_INFO_MODEL_NUM_VALUE,
-    HDLC_DEV_INFO_SYSTEM_ID,
-    HDLC_DEV_INFO_SYSTEM_ID_VALUE,
+    /* GATT Service */
+    HDLS_GENERIC_ATTRIBUTE = 0x1,
+    HDLC_GENERIC_ATTRIBUTE_SERVICE_CHANGED,
+    HDLC_GENERIC_ATTRIBUTE_SERVICE_CHANGED_VALUE,
+    /* GAP Service */
+    HDLS_GENERIC_ACCESS = 0x14,
+    HDLC_GENERIC_ACCESS_DEVICE_NAME,
+    HDLC_GENERIC_ACCESS_DEVICE_NAME_VALUE,
+    HDLC_GENERIC_ACCESS_APPEARANCE,
+    HDLC_GENERIC_ACCESS_APPEARANCE_VALUE,
+
+    /* SPP Service */
+    HDLS_SPP= 0x30,
+    HDLC_SPP_IN,
+    HDLC_SPP_IN_VALUE,
+    HDLC_SPP_IN_DESCRIPTION,
+
+    HDLC_SPP_OUT,
+    HDLC_SPP_OUT_VALUE,
+    HDLC_SPP_OUT_CCC_DESCRIPTION,
+    HDLC_SPP_OUT_DESCRIPTION,
 };
 
 /* Application event type */
@@ -50,31 +78,9 @@ enum {
 #define BLE_SM_EVT_CENTRAL_DISCONNECTED			    10
 #define BLE_SM_EVT_CENTRAL_SCANNED				    11
 
-static const char *g_stateNameTab[] = {
-        "",
-        "BLE_STATE_PERIPHERAL_ADVERTISING",
-        "BLE_STATE_PERIPHERAL_CONNECTED",
-        "BLE_STATE_CENTRAL_SCANNING",
-        "BLE_STATE_CENTRAL_CONNECTING",
-        "BLE_STATE_CENTRAL_CONNECTED",
-        "BLE_STATE_IDLE"
-};
-
-static const char *g_eventTypeNameTabl[] = {
-        "",
-        "BLE_SM_EVT_PERIPHERAL_ADV_STOPED",
-        "BLE_SM_EVT_PERIPHERAL_CONNECTION_FAIL",
-        "BLE_SM_EVT_PERIPHERAL_DISCONNECTED",
-        "BLE_SM_EVT_PERIPHERAL_CONNECTED",
-        "BLE_SM_EVT_PERIPHERAL_LEADV_CMD",
-        "BLE_SM_EVT_CENTRAL_LESCAN_CMD",
-        "BLE_SM_EVT_CENTRAL_LECONN_CMD",
-        "BLE_SM_EVT_CENTRAL_CONNECTED",
-        "BLE_SM_EVT_CENTRAL_CONNECTION_FAIL",
-        "BLE_SM_EVT_CENTRAL_DISCONNECTED",
-        "BLE_SM_EVT_CENTRAL_SCANNED"
-};
-
+/*------------------------------------------------------------------------------------------
+ * Local defined type 
+ */
 typedef struct {
     StateMachine         m_sm;
     SmRule               m_rules[18];
@@ -85,18 +91,28 @@ typedef struct {
     char                *m_wl_name;
     uint16_t             m_central_attr_handle;
 
+    uint16_t             m_spp_out_cccd_value;
+    mico_bt_ext_attribute_value_t *m_spp_out_attribute;
+
     mico_worker_thread_t m_worker_thread;
     mico_worker_thread_t m_evt_worker_thread;
     mico_bt_smartbridge_socket_t m_central_socket;
     mico_bt_peripheral_socket_t  m_peripheral_socket;
 } mico_ble_context_t;
 
+/*--------------------------------------------------------------------------------------------
+ * Local function prototype
+ */
+
 // static mico_bool_t mico_ble_check_uuid(const mico_bt_uuid_t *uuid);
 static mico_bool_t mico_ble_post_evt(mico_ble_event_t evt, mico_ble_evt_params_t *parms);
 static mico_bt_result_t mico_ble_set_device_discovery(mico_bool_t start);
 static mico_bt_result_t mico_ble_set_device_scan(mico_bool_t start);
 
-static mico_ble_context_t g_ble_context;
+static mico_bt_gatt_status_t mico_ble_periphreal_spp_data_in_callback(mico_bt_ext_attribute_value_t *attribute, 
+                                                                      mico_bt_gatt_request_type_t op);
+static mico_bt_gatt_status_t mico_ble_periphreal_spp_cccd_callback(mico_bt_ext_attribute_value_t *attribute, 
+                                                                   mico_bt_gatt_request_type_t op);
 
 /*---------------------------------------------------------------------------------------------
  * Central local resource
@@ -157,19 +173,90 @@ static const mico_bt_smart_advertising_settings_t g_peripheral_advertising_setti
     .low_duty_duration = 0,
 };
 
+static const uint8_t g_peripheral_appearance_name[2] = { BIT16_TO_8(APPEARANCE_GENERIC_TAG) };
+static const uint8_t g_periphreal_spp_cccd_value[2] = {0, 0};
+
 static const uint8_t g_peripheral_gatt_database[] = {
-    /* Declare Data Service */
-    PRIMARY_SERVICE_UUID16(HDLS_DEV_INFO, UUID_SERVCLASS_DEVICE_INFO),
-        /* Handle 0x43: characteristic Manufacture Name */
-        CHARACTERISTIC_UUID16(HDLC_DEV_INFO_MFR_NAME, HDLC_DEV_INFO_MFR_NAME_VALUE,
-                               GATT_UUID_MANU_NAME, LEGATTDB_CHAR_PROP_READ, LEGATTDB_PERM_READABLE),
-        /* Handle 0x50: characteristic Model number */
-        CHARACTERISTIC_UUID16(HDLC_DEV_INFO_MODEL_NUM, HDLC_DEV_INFO_MODEL_NUM_VALUE,
-                               GATT_UUID_MODEL_NUMBER_STR, LEGATTDB_CHAR_PROP_READ, LEGATTDB_PERM_READABLE),
-        /* Handle 0x52: characteristic System ID */
-        CHARACTERISTIC_UUID16(HDLC_DEV_INFO_SYSTEM_ID, HDLC_DEV_INFO_SYSTEM_ID_VALUE,
-                               GATT_UUID_SYSTEM_ID, LEGATTDB_CHAR_PROP_READ, LEGATTDB_PERM_READABLE),
+    /* Declare mandatory GATT service */
+    PRIMARY_SERVICE_UUID16(HDLS_GENERIC_ATTRIBUTE, UUID_SERVCLASS_GATT_SERVER),
+
+        CHARACTERISTIC_UUID16(HDLC_GENERIC_ATTRIBUTE_SERVICE_CHANGED,
+                              HDLC_GENERIC_ATTRIBUTE_SERVICE_CHANGED_VALUE,
+                              GATT_UUID_GATT_SRV_CHGD,
+                              LEGATTDB_CHAR_PROP_INDICATE,
+                              LEGATTDB_PERM_NONE),
+
+    /* Declare mandatory GAP service. Device Name and Appearance are mandatory
+     * characteristics of GAP service                                        
+     */
+    PRIMARY_SERVICE_UUID16(HDLS_GENERIC_ACCESS, UUID_SERVCLASS_GAP_SERVER),
+
+        /* Declare mandatory GAP service characteristic: Dev Name */
+        CHARACTERISTIC_UUID16(HDLC_GENERIC_ACCESS_DEVICE_NAME, HDLC_GENERIC_ACCESS_DEVICE_NAME_VALUE,
+                              GATT_UUID_GAP_DEVICE_NAME,
+                              LEGATTDB_CHAR_PROP_READ, LEGATTDB_PERM_READABLE),
+
+        /* Declare mandatory GAP service characteristic: Appearance */
+        CHARACTERISTIC_UUID16(HDLC_GENERIC_ACCESS_APPEARANCE, HDLC_GENERIC_ACCESS_APPEARANCE_VALUE,
+                              GATT_UUID_GAP_ICON,
+                              LEGATTDB_CHAR_PROP_READ, LEGATTDB_PERM_READABLE),
+
+    /* Declare SPP Service with 128 byte UUID */
+    PRIMARY_SERVICE_UUID128(HDLS_SPP, UUID_SPP_SERVICE),
+
+        /* Declare characteristic used to write spp data to server */
+        CHARACTERISTIC_UUID128_WRITABLE(HDLC_SPP_IN, 
+                                        HDLC_SPP_IN_VALUE,
+                                        UUID_SPP_SERVICE_CHARACTERISTIC_IN,
+                                        LEGATTDB_CHAR_PROP_WRITE, 
+                                        LEGATTDB_PERM_WRITE_CMD | LEGATTDB_PERM_WRITE_REQ),
+
+        CHAR_DESCRIPTOR_UUID16(HDLC_SPP_IN_DESCRIPTION, 
+                               GATT_UUID_CHAR_DESCRIPTION,
+                               LEGATTDB_PERM_READABLE),
+
+        /* Declare characteristic used to send spp data to client */
+        CHARACTERISTIC_UUID128(HDLC_SPP_OUT, 
+                               HDLC_SPP_OUT_VALUE,
+                               UUID_SPP_SERVICE_CHARACTERISTIC_OUT,
+                               LEGATTDB_CHAR_PROP_INDICATE | LEGATTDB_CHAR_PROP_NOTIFY, 
+                               LEGATTDB_PERM_NONE),
+
+        CHAR_DESCRIPTOR_UUID16_WRITABLE(HDLC_SPP_OUT_CCC_DESCRIPTION,
+                                        GATT_UUID_CHAR_CLIENT_CONFIG,
+                                        LEGATTDB_PERM_READABLE | LEGATTDB_PERM_WRITE_CMD | LEGATTDB_PERM_WRITE_REQ),
+
+        CHAR_DESCRIPTOR_UUID16(HDLC_SPP_OUT_DESCRIPTION, 
+                               GATT_UUID_CHAR_DESCRIPTION,
+                               LEGATTDB_PERM_READABLE),
 };
+
+static const char *g_stateNameTab[] = {
+    "",
+    "BLE_STATE_PERIPHERAL_ADVERTISING",
+    "BLE_STATE_PERIPHERAL_CONNECTED",
+    "BLE_STATE_CENTRAL_SCANNING",
+    "BLE_STATE_CENTRAL_CONNECTING",
+    "BLE_STATE_CENTRAL_CONNECTED",
+    "BLE_STATE_IDLE"
+};
+
+static const char *g_eventTypeNameTabl[] = {
+    "",
+    "BLE_SM_EVT_PERIPHERAL_ADV_STOPED",
+    "BLE_SM_EVT_PERIPHERAL_CONNECTION_FAIL",
+    "BLE_SM_EVT_PERIPHERAL_DISCONNECTED",
+    "BLE_SM_EVT_PERIPHERAL_CONNECTED",
+    "BLE_SM_EVT_PERIPHERAL_LEADV_CMD",
+    "BLE_SM_EVT_CENTRAL_LESCAN_CMD",
+    "BLE_SM_EVT_CENTRAL_LECONN_CMD",
+    "BLE_SM_EVT_CENTRAL_CONNECTED",
+    "BLE_SM_EVT_CENTRAL_CONNECTION_FAIL",
+    "BLE_SM_EVT_CENTRAL_DISCONNECTED",
+    "BLE_SM_EVT_CENTRAL_SCANNED"
+};
+
+static mico_ble_context_t g_ble_context;
 
 /*---------------------------------------------------------------------------------------------
  * Peripheral function definition 
@@ -177,9 +264,31 @@ static const uint8_t g_peripheral_gatt_database[] = {
 
 static void mico_ble_peripheral_create_attribute_db(void)
 {
-    mico_bt_peripheral_ext_attribute_add(HDLC_DEV_INFO_MFR_NAME, strlen((char *)APP_MANUFACTURE), (uint8_t *)APP_MANUFACTURE, NULL);
-    mico_bt_peripheral_ext_attribute_add(HDLC_DEV_INFO_MODEL_NUM_VALUE, strlen((char *)APP_MODEL), (uint8_t *)APP_MODEL, NULL);
-    mico_bt_peripheral_ext_attribute_add(HDLC_DEV_INFO_SYSTEM_ID_VALUE, strlen((char *)APP_SYSTEM_ID), (uint8_t *)APP_SYSTEM_ID, NULL);
+    extern mico_bt_cfg_settings_t   mico_bt_cfg_settings;
+
+    /* Create BLE GATT value database */
+    // ***** Primary service 'Generic Attribute'
+    mico_bt_peripheral_ext_attribute_add(HDLC_GENERIC_ATTRIBUTE_SERVICE_CHANGED_VALUE, 0, NULL, NULL);
+
+    // ***** Primary service 'Generic Access'
+    mico_bt_peripheral_ext_attribute_add(HDLC_GENERIC_ACCESS_DEVICE_NAME_VALUE, 
+                                         strlen((char *)mico_bt_cfg_settings.device_name), 
+                                         mico_bt_cfg_settings.device_name, 
+                                         NULL);
+    mico_bt_peripheral_ext_attribute_add(HDLC_GENERIC_ACCESS_APPEARANCE_VALUE, 
+                                         sizeof(g_peripheral_appearance_name), 
+                                         g_peripheral_appearance_name, 
+                                         NULL);
+
+    // ***** Primary service 'SPP' (Vender specific)
+    mico_bt_peripheral_ext_attribute_add(HDLC_SPP_IN_VALUE, 0, NULL, mico_ble_periphreal_spp_data_in_callback);
+    mico_bt_peripheral_ext_attribute_add(HDLC_SPP_IN_DESCRIPTION, strlen("SPP Data IN"), (uint8_t *)"SPP Data IN", NULL);
+
+    g_ble_context.m_spp_out_attribute = mico_bt_peripheral_ext_attribute_add(HDLC_SPP_OUT_VALUE, 0, NULL, NULL );
+    mico_bt_peripheral_ext_attribute_add(HDLC_SPP_OUT_CCC_DESCRIPTION, 2, (uint8_t *)&g_ble_context.m_spp_out_cccd_value, mico_ble_periphreal_spp_cccd_callback);
+    mico_bt_peripheral_ext_attribute_add(HDLC_SPP_OUT_DESCRIPTION, strlen("SPP Data OUT"), (uint8_t *)"SPP Data OUT", NULL);
+
+    mico_bt_peripheral_ext_attribute_find_by_handle(HDLC_SPP_OUT_VALUE, &g_ble_context.m_spp_out_attribute);
 }
 
 static mico_bt_result_t mico_ble_peripheral_set_advertisement_data(void)
@@ -240,6 +349,37 @@ static OSStatus mico_ble_peripheral_disconnect_handler(mico_bt_peripheral_socket
     }
 
     return kNoErr;
+}
+
+static mico_bt_gatt_status_t mico_ble_periphreal_spp_data_in_callback(mico_bt_ext_attribute_value_t *attribute, 
+                                                                      mico_bt_gatt_request_type_t op)
+{
+    mico_ble_evt_params_t evt;
+
+    if (op == GATTS_REQ_TYPE_WRITE) {
+        evt.u.data.length = attribute->value_length;
+        evt.u.data.p_data = attribute->p_value;
+        mico_ble_post_evt(BLE_EVT_DATA, &evt);
+        return MICO_BT_GATT_SUCCESS;
+    } else {
+        return MICO_BT_GATT_ERROR;
+    }
+}
+
+static mico_bt_gatt_status_t mico_ble_periphreal_spp_cccd_callback(mico_bt_ext_attribute_value_t *attribute, 
+                                                                   mico_bt_gatt_request_type_t op)
+{
+    if (op == GATTS_REQ_TYPE_READ) {
+        return MICO_BT_GATT_SUCCESS;
+    } else if (op == GATTS_REQ_TYPE_WRITE) {
+        if (attribute->value_length != 2) {
+            return MICO_BT_GATT_INVALID_ATTR_LEN;
+        }
+        g_ble_context.m_spp_out_cccd_value = attribute->p_value[0] | (attribute->p_value[1] << 8);
+        return MICO_BT_GATT_SUCCESS;
+    } else {
+        return MICO_BT_GATT_ERROR;
+    }
 }
 
 static mico_bt_result_t mico_ble_peripheral_device_init(void)
@@ -881,7 +1021,25 @@ mico_ble_state_t mico_ble_get_device_state(void)
  */
 mico_bt_result_t mico_ble_send_data(const uint8_t *p_data, uint32_t length, uint32_t timeout_ms)
 {
-    return MICO_BT_SUCCESS;
+    mico_bt_result_t ret = MICO_BT_BADARG;
+
+    require(p_data != NULL && length > 0, exit);
+
+    if (SM_InState(&g_ble_context.m_sm, BLE_STATE_CENTRAL_CONNECTED)) {
+
+    } else if (SM_InState(&g_ble_context.m_sm, BLE_STATE_PERIPHERAL_CONNECTED)) {
+        mico_bt_peripheral_ext_attribute_value_write(g_ble_context.m_spp_out_attribute, length, 0, p_data);
+        if (g_ble_context.m_spp_out_cccd_value & GATT_CLIENT_CONFIG_NOTIFICATION) {
+            mico_bt_peripheral_gatt_notify_attribute_value(&g_ble_context.m_peripheral_socket, g_ble_context.m_spp_out_attribute);
+        } else if (g_ble_context.m_spp_out_cccd_value & GATT_CLIENT_CONFIG_INDICATION) {
+            mico_bt_peripheral_gatt_indicate_attribute_value(&g_ble_context.m_peripheral_socket, g_ble_context.m_spp_out_attribute);
+        } else {
+            ret = MICO_BT_BADOPTION;
+        }
+    }
+
+exit:
+    return ret;
 }
 
 /**
