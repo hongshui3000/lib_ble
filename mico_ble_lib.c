@@ -83,7 +83,7 @@ enum {
  */
 typedef struct {
     StateMachine         m_sm;
-    SmRule               m_rules[18];
+    SmRule               m_rules[20];
     mico_bool_t          m_is_central;
     mico_bool_t          m_is_initialized;
     mico_ble_evt_cback_t m_cback;
@@ -637,6 +637,7 @@ static void mico_ble_state_machine_init(StateMachine *sm, uint8_t init_state)
 
     SM_OnEvent(sm, BLE_STATE_PERIPHERAL_ADVERTISING, BLE_SM_EVT_PERIPHERAL_CONNECTION_FAIL, BLE_STATE_PERIPHERAL_ADVERTISING, NULL);
     SM_OnEvent(sm, BLE_STATE_PERIPHERAL_ADVERTISING, BLE_SM_EVT_PERIPHERAL_CONNECTED, BLE_STATE_PERIPHERAL_CONNECTED, NULL);
+    SM_OnEvent(sm, BLE_STATE_PERIPHERAL_ADVERTISING, BLE_SM_EVT_CENTRAL_LESCAN_CMD, BLE_STATE_CENTRAL_SCANNING, NULL);
     
     SM_OnEvent(sm, BLE_STATE_PERIPHERAL_CONNECTED, BLE_SM_EVT_PERIPHERAL_DISCONNECTED, BLE_STATE_PERIPHERAL_ADVERTISING, app_peripheral_start_advertising);
     SM_OnEnter(sm, BLE_STATE_PERIPHERAL_CONNECTED, app_peripheral_connected);
@@ -880,8 +881,11 @@ mico_bt_result_t mico_ble_start_device_scan(void)
         mico_ble_set_device_discovery(MICO_FALSE);
 
         mico_bt_result_t ret = mico_ble_set_device_scan(MICO_TRUE);
-        if (ret == MICO_BT_SUCCESS) {
+        if (ret == MICO_BT_PENDING) {
             SM_Handle(&g_ble_context.m_sm, BLE_SM_EVT_CENTRAL_LESCAN_CMD);
+            ret = MICO_BT_SUCCESS;
+        } else {
+            mico_ble_set_device_discovery(MICO_TRUE);
         }
         return ret;
     }
@@ -922,6 +926,8 @@ mico_bt_result_t mico_ble_start_device_discovery(void)
         mico_bt_result_t ret = mico_ble_set_device_discovery(MICO_TRUE);
         if (ret == MICO_BT_SUCCESS) {
             SM_Handle(&g_ble_context.m_sm, BLE_SM_EVT_PERIPHERAL_LEADV_CMD);
+        } else {
+            mico_ble_set_device_scan(MICO_TRUE);
         }
         return ret;
     }

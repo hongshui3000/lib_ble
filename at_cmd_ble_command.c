@@ -71,8 +71,8 @@ static void ble_get_device_name(at_cmd_driver_t *driver);
 static void ble_get_device_addr(at_cmd_driver_t *driver);
 static void ble_send_rawdata(at_cmd_driver_t *driver);
 static void ble_send_data_packet(at_cmd_driver_t *driver, at_cmd_para_t *para);
-static void ble_set_scan_mode(at_cmd_driver_t *driver, at_cmd_para_t *para);
-static void ble_set_advertisement_mode(at_cmd_driver_t *driver, at_cmd_para_t *para);
+static void ble_set_scan_mode(at_cmd_driver_t *driver);
+static void ble_set_advertisement_mode(at_cmd_driver_t *driver);
 static void ble_gap_connect(at_cmd_driver_t *driver, at_cmd_para_t *para);
 static void ble_gap_disconnect(at_cmd_driver_t *driver, at_cmd_para_t *para);
 static void ble_get_state(at_cmd_driver_t *driver);
@@ -95,12 +95,11 @@ static const struct at_cmd_command g_ble_cmds[] = {
 
         /* BLE Central */
         { "AT+LEWLNAME",    ble_get_whitelist_name, ble_set_whitelist_name,         NULL,                       NULL },
-        // { "AT+LEWLUUID",    ble_get_whitelist_uuid, ble_set_whitelist_uuid,         NULL,                       NULL },
-        { "AT+LESCAN",      NULL,                   ble_set_scan_mode,              NULL,                       NULL },
+        { "AT+LESCAN",      NULL,                   NULL,                           NULL,                       ble_set_scan_mode },
         { "AT+LECONN",      NULL,                   ble_gap_connect,                NULL,                       NULL },
 
         /* BLE Peripheral */
-        { "AT+LEADV",       NULL,                   ble_set_advertisement_mode,     NULL,                       NULL },
+        { "AT+LEADV",       NULL,                   NULL,                           NULL,                       ble_set_advertisement_mode },
 };
 
 
@@ -222,7 +221,7 @@ static OSStatus ble_event_handle(mico_ble_event_t  event, const mico_ble_evt_par
             at_ble_log("The remote device is disconnected");
             if (g_ble_context.p_config->is_enable_event) {
                 /* +LEPCONN:OFF */
-                sprintf(response, "%s+LEPCONN:OFF,0x%04x%s", AT_PROMPT, params->u.disconn.handle, AT_PROMPT);
+                sprintf(response, "%s+LEPCONN:OFF%s", AT_PROMPT, AT_PROMPT);
                 uart_driver_struct_get()->write((uint8_t *)response, strlen(response));
             }
             break;
@@ -504,7 +503,7 @@ exit:
  * AT+LESCAN
  * OK or ERR
  */
-static void ble_set_scan_mode(at_cmd_driver_t *driver, at_cmd_para_t *para)
+static void ble_set_scan_mode(at_cmd_driver_t *driver)
 {
 //    mico_bool_t start;
     char response[50];//, *params;
@@ -540,7 +539,7 @@ static void ble_set_scan_mode(at_cmd_driver_t *driver, at_cmd_para_t *para)
  * AT+LEADV
  * OK or ERR
  */
-static void ble_set_advertisement_mode(at_cmd_driver_t *driver, at_cmd_para_t *para)
+static void ble_set_advertisement_mode(at_cmd_driver_t *driver)
 {
 //    mico_bool_t  start;
     char response[50];//, *params;
