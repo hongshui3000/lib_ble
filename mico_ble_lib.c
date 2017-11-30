@@ -1027,18 +1027,43 @@ mico_ble_state_t mico_ble_get_device_state(void)
  */
 mico_bt_result_t mico_ble_send_data(const uint8_t *p_data, uint32_t length, uint32_t timeout_ms)
 {
+    OSStatus err;
     mico_bt_result_t ret = MICO_BT_BADARG;
+
+    UNUSED_PARAMETER(timeout_ms);
 
     require(p_data != NULL && length > 0, exit);
 
     if (SM_InState(&g_ble_context.m_sm, BLE_STATE_CENTRAL_CONNECTED)) {
+        mico_bt_smart_attribute_t *characteristic_value = NULL;
+        mico_bt_smart_attribute_create(&characteristic_value, MICO_ATTRIBUTE_TYPE_CHARACTERISTIC_VALUE, length);
+        err = mico_bt_smartbridge_get_attribute_cache_by_handle(&g_ble_context.m_central_socket, 
+                                                                 g_ble_context.m_central_attr_handle, 
+                                                                 characteristic_value, 
+                                                                 ATTR_CHARACTERISTIC_VALUE_SIZE(20));
+        require_noerr_action(err, exit, ret = MICO_BT_BADOPTION);
 
+        const uint8_t attr_cap_size = characteristic_value->value_length;
+        uint8_t actual_len = 0;
+
+        while (length > 0 && err == kNoErr) {
+            actual_len = MIN(attr_cap_size, length);
+            memcpy(characteristic_value->value.value, p_data, actual_len);
+            characteristic_value->value_length = actual_len;
+            err = (mico_bt_result_t)mico_bt_smartbridge_write_attribute_cache_characteristic_value(&g_ble_context.m_central_socket, 
+                                                                                                    characteristic_value);
+            p_data += actual_len;
+            length -= actual_len;
+        }
     } else if (SM_InState(&g_ble_context.m_sm, BLE_STATE_PERIPHERAL_CONNECTED)) {
-        mico_bt_peripheral_ext_attribute_value_write(g_ble_context.m_spp_out_attribute, length, 0, p_data);
+        err = mico_bt_peripheral_ext_attribute_value_write(g_ble_context.m_spp_out_attribute, length, 0, p_data);
+        require_noerr_action(err, exit, ret = MICO_BT_NO_RESOURCES);
         if (g_ble_context.m_spp_out_cccd_value & GATT_CLIENT_CONFIG_NOTIFICATION) {
-            mico_bt_peripheral_gatt_notify_attribute_value(&g_ble_context.m_peripheral_socket, g_ble_context.m_spp_out_attribute);
+            ret = (mico_bt_result_t)mico_bt_peripheral_gatt_notify_attribute_value(&g_ble_context.m_peripheral_socket, 
+                                                                                    g_ble_context.m_spp_out_attribute);
         } else if (g_ble_context.m_spp_out_cccd_value & GATT_CLIENT_CONFIG_INDICATION) {
-            mico_bt_peripheral_gatt_indicate_attribute_value(&g_ble_context.m_peripheral_socket, g_ble_context.m_spp_out_attribute);
+            ret = (mico_bt_result_t)mico_bt_peripheral_gatt_indicate_attribute_value(&g_ble_context.m_peripheral_socket, 
+                                                                                      g_ble_context.m_spp_out_attribute);
         } else {
             ret = MICO_BT_BADOPTION;
         }
@@ -1047,35 +1072,6 @@ mico_bt_result_t mico_ble_send_data(const uint8_t *p_data, uint32_t length, uint
 exit:
     return ret;
 }
-
-/**
- * Check if UUID is valid.
- * 
- * @param uuid
- *          A pointer of UUID.
- * 
- * @return 
- *      MICO_FALSE -- invalid
- *      MICO_TRUE  -- valid 
- */
-// static mico_bool_t mico_ble_check_uuid(const mico_bt_uuid_t *uuid)
-// {
-//     if (!uuid) {
-//         return MICO_FALSE;
-//     }
-
-//     if (uuid->len == LEN_UUID_16) {
-//         return (uuid->uu.uuid16 > (uint16_t)0 && uuid->uu.uuid16 < (uint16_t)(-1));
-//     } else if (uuid->len == LEN_UUID_32) {
-//         return (uuid->uu.uuid32 > (uint32_t)0 && uuid->uu.uuid32 < (uint32_t)(-1));
-//     } else if (uuid->len == LEN_UUID_128) {
-//         const uint8_t *p = uuid->uu.uuid128;
-//         while (p < &uuid->uu.uuid128[LEN_UUID_128] && *p++ == 0);
-//         return (p != &uuid->uu.uuid128[LEN_UUID_128]);
-//     } else {
-//         return MICO_FALSE;
-//     }
-// }
 
 /* Handle an event for POST EVENT To User Layer. */
 static OSStatus ble_post_evt_handler(void *arg)
@@ -1094,12 +1090,6 @@ static OSStatus ble_post_evt_handler(void *arg)
         free(parms->u.data.p_data);
     }
     free(arg);
-
-    /* Restore current RFCOMM Channel.  */
-    // if (evt == BT_RFCOMM_EVT_DATA && g_ble_context.m_is_recv_data_pending) {
-    //     g_ble_context.m_is_recv_data_pending = MICO_FALSE;
-    //     mico_bt_rfcomm_flow_control(g_ble_context.m_connection_handle, MICO_TRUE);
-    // }
 
     return kNoErr;
 }
@@ -1141,10 +1131,6 @@ static mico_bool_t mico_ble_post_evt(mico_ble_event_t evt, mico_ble_evt_params_t
         if (kNoErr != mico_rtos_send_asynchronous_event(&g_ble_context.m_evt_worker_thread,
                                                         ble_post_evt_handler, 
                                                         arg)) {
-            /* Pending current RFCOMM Channel. */
-            // mico_bt_rfcomm_flow_control(g_ble_context.m_connection_handle, MICO_FALSE);
-            // g_ble_context.m_is_recv_data_pending = MICO_TRUE;
-
             mico_ble_log("%s: send asyn event failed", __FUNCTION__);
             if (p) free(p->u.data.p_data);
             free(arg);
@@ -1203,3 +1189,32 @@ char *bdaddr_ntoa(const uint8_t *addr, char *addr_str)
     *--bp = 0;
     return addr_str;
 }
+
+/**
+ * Check if UUID is valid.
+ * 
+ * @param uuid
+ *          A pointer of UUID.
+ * 
+ * @return 
+ *      MICO_FALSE -- invalid
+ *      MICO_TRUE  -- valid 
+ */
+// static mico_bool_t mico_ble_check_uuid(const mico_bt_uuid_t *uuid)
+// {
+//     if (!uuid) {
+//         return MICO_FALSE;
+//     }
+
+//     if (uuid->len == LEN_UUID_16) {
+//         return (uuid->uu.uuid16 > (uint16_t)0 && uuid->uu.uuid16 < (uint16_t)(-1));
+//     } else if (uuid->len == LEN_UUID_32) {
+//         return (uuid->uu.uuid32 > (uint32_t)0 && uuid->uu.uuid32 < (uint32_t)(-1));
+//     } else if (uuid->len == LEN_UUID_128) {
+//         const uint8_t *p = uuid->uu.uuid128;
+//         while (p < &uuid->uu.uuid128[LEN_UUID_128] && *p++ == 0);
+//         return (p != &uuid->uu.uuid128[LEN_UUID_128]);
+//     } else {
+//         return MICO_FALSE;
+//     }
+// }
