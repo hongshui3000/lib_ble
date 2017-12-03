@@ -1,18 +1,13 @@
 #include <string.h>
-#include <stdio.h>
 #include <mico_bt_types.h>
 
 #include "mico.h"
 #include "mico_bt.h"
 #include "mico_bt_cfg.h"
-#include "mico_bt_smart_interface.h"
 #include "mico_bt_smartbridge.h"
-#include "mico_bt_smartbridge_gatt.h"
 #include "mico_bt_peripheral.h"
 #include "sdpdefs.h"
 
-#include "StringUtils.h"
-#include "LinkListUtils.h"
 #include "statemachine.h"
 
 #include "mico_ble_lib.h"
@@ -22,10 +17,6 @@
 /*-----------------------------------------------------------------------------------------
  * Configuration 
  */
-#define APP_MANUFACTURE "MXCHIP"
-#define APP_MODEL       "123456"
-#define APP_SYSTEM_ID   "001122"
-
 #define BLUETOOTH_PRINT_SERVICE_UUID    0x18F0
 #define BLUETOOTH_PRINT_CHAR_CMD_UUID   0x2AF1
 
@@ -129,8 +120,8 @@ static mico_bt_uuid_t g_central_whitelist_char_uuid = {
 };
 
 static const mico_bt_smart_security_settings_t g_central_security_settings = {
-    .timeout_second = 15,
-    .io_capabilities = BT_SMART_IO_DISPLAY_ONLY,
+    .timeout_second = 10,
+    .io_capabilities = BT_SMART_IO_NO_INPUT_NO_OUTPUT,
     .authentication_requirements = BT_SMART_AUTH_REQ_NONE,
     .oob_authentication = BT_SMART_OOB_AUTH_NONE,
     .max_encryption_key_size = 16,
@@ -155,9 +146,9 @@ static const mico_bt_smart_scan_settings_t g_central_scan_settings = {
    .type              = BT_SMART_PASSIVE_SCAN,
    .filter_policy     = FILTER_POLICY_NONE,
    .filter_duplicates = DUPLICATES_FILTER_ENABLED,
-   .interval          = 512,
-   .window            = 48,
-   .duration_second   = 10,
+   .interval          = 128,
+   .window            = 64,
+   .duration_second   = 5,
 };
 
 /*--------------------------------------------------------------------------------------------
@@ -174,7 +165,6 @@ static const mico_bt_smart_advertising_settings_t g_peripheral_advertising_setti
 };
 
 static const uint8_t g_peripheral_appearance_name[2] = { BIT16_TO_8(APPEARANCE_GENERIC_TAG) };
-static const uint8_t g_periphreal_spp_cccd_value[2] = {0, 0};
 
 static const uint8_t g_peripheral_gatt_database[] = {
     /* Declare mandatory GATT service */
@@ -272,7 +262,7 @@ static void mico_ble_peripheral_create_attribute_db(void)
 
     // ***** Primary service 'Generic Access'
     mico_bt_peripheral_ext_attribute_add(HDLC_GENERIC_ACCESS_DEVICE_NAME_VALUE, 
-                                         strlen((char *)mico_bt_cfg_settings.device_name), 
+                                         (uint16_t)strlen((char *)mico_bt_cfg_settings.device_name),
                                          mico_bt_cfg_settings.device_name, 
                                          NULL);
     mico_bt_peripheral_ext_attribute_add(HDLC_GENERIC_ACCESS_APPEARANCE_VALUE, 
@@ -282,30 +272,37 @@ static void mico_ble_peripheral_create_attribute_db(void)
 
     // ***** Primary service 'SPP' (Vender specific)
     mico_bt_peripheral_ext_attribute_add(HDLC_SPP_IN_VALUE, 0, NULL, mico_ble_periphreal_spp_data_in_callback);
-    mico_bt_peripheral_ext_attribute_add(HDLC_SPP_IN_DESCRIPTION, strlen("SPP Data IN"), (uint8_t *)"SPP Data IN", NULL);
+    mico_bt_peripheral_ext_attribute_add(HDLC_SPP_IN_DESCRIPTION,
+                                         (uint16_t)strlen("SPP Data IN"),
+                                         (uint8_t *)"SPP Data IN", NULL);
 
     g_ble_context.m_spp_out_attribute = mico_bt_peripheral_ext_attribute_add(HDLC_SPP_OUT_VALUE, 0, NULL, NULL );
-    mico_bt_peripheral_ext_attribute_add(HDLC_SPP_OUT_CCC_DESCRIPTION, 2, (uint8_t *)&g_ble_context.m_spp_out_cccd_value, mico_ble_periphreal_spp_cccd_callback);
-    mico_bt_peripheral_ext_attribute_add(HDLC_SPP_OUT_DESCRIPTION, strlen("SPP Data OUT"), (uint8_t *)"SPP Data OUT", NULL);
+    mico_bt_peripheral_ext_attribute_add(HDLC_SPP_OUT_CCC_DESCRIPTION, 2,
+                                         (uint8_t *)&g_ble_context.m_spp_out_cccd_value,
+                                         mico_ble_periphreal_spp_cccd_callback);
+    mico_bt_peripheral_ext_attribute_add(HDLC_SPP_OUT_DESCRIPTION,
+                                         (uint16_t)strlen("SPP Data OUT"),
+                                         (uint8_t *)"SPP Data OUT",
+                                         NULL);
 
     mico_bt_peripheral_ext_attribute_find_by_handle(HDLC_SPP_OUT_VALUE, &g_ble_context.m_spp_out_attribute);
 }
 
 static mico_bt_result_t mico_ble_peripheral_set_advertisement_data(void)
 {
-    OSStatus err = kNoErr;
+    OSStatus err;
     mico_bt_ble_advert_data_t adv_data;
 
-    // mico_bt_ble_128service_t adver_services_128 = {
-    //     .list_cmpl = false,
-    //     .uuid128 = {UUID_HELLO_SERVICE},
-    // };
+     mico_bt_ble_128service_t adver_services_128 = {
+         .list_cmpl = false,
+         .uuid128 = { UUID_SPP_SERVICE },
+     };
 
     adv_data.flag = BTM_BLE_GENERAL_DISCOVERABLE_FLAG | BTM_BLE_BREDR_NOT_SUPPORTED;
-    // adv_data.p_services_128b = &adver_services_128;
+    adv_data.p_services_128b = &adver_services_128;
     
     err = mico_bt_ble_set_advertisement_data(BTM_BLE_ADVERT_BIT_DEV_NAME 
-                                            //  | BTM_BLE_ADVERT_BIT_SERVICE_128
+                                             | BTM_BLE_ADVERT_BIT_SERVICE_128
                                              | BTM_BLE_ADVERT_BIT_FLAGS, 
                                              &adv_data);
     require_noerr_string(err, exit, "Set Advertisement Data failed");
@@ -314,7 +311,7 @@ static mico_bt_result_t mico_ble_peripheral_set_advertisement_data(void)
     require_noerr_string(err, exit, "Set Advertisement ScanRsp Data failed");
 
 exit:
-    return err;
+    return (mico_bt_result_t)err;
 }
 
 static OSStatus mico_ble_peripheral_advertisement_complete_handler(void *arg)
@@ -329,6 +326,8 @@ static OSStatus mico_ble_peripheral_advertisement_complete_handler(void *arg)
 
 static OSStatus mico_ble_peripheral_connect_handler(mico_bt_peripheral_socket_t *socket)
 {
+    UNUSED_PARAMETER(socket);
+
     mico_ble_log("Connection up [peripheral]");
 
     mico_bt_peripheral_stop_advertisements();
@@ -342,6 +341,8 @@ static OSStatus mico_ble_peripheral_connect_handler(mico_bt_peripheral_socket_t 
 
 static OSStatus mico_ble_peripheral_disconnect_handler(mico_bt_peripheral_socket_t *socket)
 {
+    UNUSED_PARAMETER(socket);
+
     mico_ble_log("Connection down [periphreal]");
 
     if (SM_InState(&g_ble_context.m_sm, BLE_STATE_PERIPHERAL_CONNECTED)) {
@@ -402,12 +403,14 @@ static mico_bt_result_t mico_ble_peripheral_device_init(void)
     mico_ble_peripheral_set_advertisement_data();
 
 exit:
-    return err;
+    return (mico_bt_result_t)err;
 }
 
 /* State translate action. */
 static mico_bool_t app_peripheral_start_advertising(void *context)
 {
+    UNUSED_PARAMETER(context);
+
     /* Start advertising proceudre */
     mico_bt_result_t err = mico_ble_set_device_discovery(MICO_TRUE);
     if (err != MICO_BT_SUCCESS) {
@@ -424,6 +427,8 @@ static mico_bool_t app_peripheral_connected(void *context)
 {
     mico_ble_evt_params_t evt_params;
 
+    UNUSED_PARAMETER(context);
+
     /* 发送LEADV=OFF消息 */
     mico_ble_post_evt(BLE_EVT_PERIPHERAL_ADV_STOP, NULL);
     
@@ -439,6 +444,9 @@ static mico_bool_t app_peripheral_disconnected(void *context)
 {
     /* 发送LECONN=SLAVE,OFF消息 */
     mico_ble_evt_params_t evt_params;
+
+    UNUSED_PARAMETER(context);
+
     memcpy(evt_params.bd_addr, g_ble_context.m_peripheral_socket.remote_device.address, 6);
     evt_params.u.disconn.handle = g_ble_context.m_peripheral_socket.connection_handle;
     mico_ble_post_evt(BLE_EVT_PERIPHERAL_DISCONNECTED, &evt_params);
@@ -451,6 +459,8 @@ static mico_bool_t app_peripheral_disconnected(void *context)
 
 static OSStatus mico_ble_central_scan_complete_handler(void *arg)
 {
+    UNUSED_PARAMETER(arg);
+
     if (SM_InState(&g_ble_context.m_sm, BLE_STATE_CENTRAL_SCANNING)) {
         SM_Handle(&g_ble_context.m_sm, BLE_SM_EVT_CENTRAL_SCANNED);
     }
@@ -486,6 +496,8 @@ static OSStatus mico_ble_central_scan_result_handler(const mico_bt_smart_adverti
 
 static OSStatus mico_ble_central_disconnection_handler(mico_bt_smartbridge_socket_t *socket)
 {
+    UNUSED_PARAMETER(socket);
+
     mico_ble_log("smartbridge device disconnected.");
 
     if (SM_InState(&g_ble_context.m_sm, BLE_STATE_CENTRAL_CONNECTED)) {
@@ -496,7 +508,7 @@ static OSStatus mico_ble_central_disconnection_handler(mico_bt_smartbridge_socke
 
 static OSStatus mico_ble_central_connect_handler(void *arg)
 {
-    mico_bt_result_t ret = MICO_BT_BADOPTION;
+    OSStatus ret = MICO_BT_BADOPTION;
     mico_bt_smartbridge_socket_status_t status;
     mico_bt_smart_device_t *remote_device = (mico_bt_smart_device_t *)arg;
 
@@ -515,7 +527,7 @@ static OSStatus mico_ble_central_connect_handler(void *arg)
 
             /* Connecting */
             ret = mico_bt_smartbridge_connect(&g_ble_context.m_central_socket, 
-                                              remote_device, 
+                                              remote_device,
                                               &g_central_connection_settings, 
                                               mico_ble_central_disconnection_handler, 
                                               NULL);
@@ -550,6 +562,10 @@ static OSStatus mico_ble_central_connect_handler(void *arg)
 exit:
     if (ret != MICO_BT_SUCCESS) {
         SM_Handle(&g_ble_context.m_sm, BLE_SM_EVT_CENTRAL_CONNECTION_FAIL);
+        /* 发送LECONN=CENTRAL,OFF消息 */
+        mico_ble_evt_params_t params;
+        memcpy(params.bd_addr, g_ble_context.m_central_socket.remote_device.address, 6);
+        mico_ble_post_evt(BLE_EVT_CENTRAL_DISCONNECTED, &params);
     } else {
         SM_Handle(&g_ble_context.m_sm, BLE_SM_EVT_CENTRAL_CONNECTED);
     }
@@ -575,11 +591,13 @@ static mico_bt_result_t mico_ble_central_device_init(void)
     require_noerr_action(err, exit, mico_rtos_delete_worker_thread(&g_ble_context.m_evt_worker_thread));
 
 exit:
-    return err;
+    return (mico_bt_result_t)err;
 }
 
 static mico_bool_t app_central_start_scanning(void *context)
 {
+    UNUSED_PARAMETER(context);
+
     /* 如果没有SCAN，则开启SCAN */
     if (!mico_bt_smartbridge_is_scanning()) {
         mico_ble_set_device_scan(MICO_TRUE);
@@ -592,6 +610,8 @@ static mico_bool_t app_central_start_scanning(void *context)
 
 static mico_bool_t app_central_scanning_stoped(void *context)
 {
+    UNUSED_PARAMETER(context);
+
     /* 发送LESCAN=OFF消息 */
     mico_ble_post_evt(BLE_EVT_CENTRAL_SCAN_STOP, NULL);
     return TRUE;
@@ -600,6 +620,8 @@ static mico_bool_t app_central_scanning_stoped(void *context)
 static mico_bool_t app_central_connected(void *context)
 {
     mico_ble_evt_params_t params;
+
+    UNUSED_PARAMETER(context);
 
     /* 发送LECONN=CENTRAL,ON消息 */
     memcpy(params.bd_addr, g_ble_context.m_central_socket.remote_device.address, 6);
@@ -611,6 +633,8 @@ static mico_bool_t app_central_connected(void *context)
 static mico_bool_t app_central_disconnected(void *context)
 {
     mico_ble_evt_params_t params;
+
+    UNUSED_PARAMETER(context);
 
     /* 发送LECONN=CENTRAL,OFF消息 */
     memcpy(params.bd_addr, g_ble_context.m_central_socket.remote_device.address, 6);
@@ -650,7 +674,7 @@ static void mico_ble_state_machine_init(StateMachine *sm, uint8_t init_state)
     
     SM_OnEvent(sm, BLE_STATE_CENTRAL_CONNECTING, BLE_SM_EVT_CENTRAL_CONNECTION_FAIL, BLE_STATE_IDLE, NULL);
     SM_OnEvent(sm, BLE_STATE_CENTRAL_CONNECTING, BLE_SM_EVT_CENTRAL_CONNECTED, BLE_STATE_CENTRAL_CONNECTED, NULL);
-    
+
     SM_OnEvent(sm, BLE_STATE_CENTRAL_CONNECTED, BLE_SM_EVT_CENTRAL_DISCONNECTED, BLE_STATE_IDLE, NULL);
     SM_OnEnter(sm, BLE_STATE_CENTRAL_CONNECTED, app_central_connected);
     SM_OnExit(sm, BLE_STATE_CENTRAL_CONNECTED, app_central_disconnected);
@@ -697,7 +721,7 @@ mico_bt_result_t mico_ble_init(const char *device_name,
     memset(&g_ble_context, 0, sizeof(g_ble_context));
 
     /* Initialize Bluetooth Stack & GAP Role. */
-    err = mico_bt_init(MICO_BT_HCI_MODE, device_name, 1, 1);
+    err = (mico_bt_result_t)mico_bt_init(MICO_BT_HCI_MODE, device_name, 1, 1);
     require_string(err == MICO_BT_SUCCESS, exit, "Error initializing MiCO Bluetooth Framework");
 
     err = mico_ble_central_device_init();
@@ -801,6 +825,7 @@ mico_bt_result_t mico_ble_set_device_whitelist_name(const char *name)
         }
         memset(g_ble_context.m_wl_name, 0, 31);
         strcpy(g_ble_context.m_wl_name, name);
+        ret = MICO_BT_SUCCESS;
     }
 
 exit:
@@ -954,7 +979,9 @@ mico_bt_result_t mico_ble_connect(mico_bt_device_address_t bdaddr)
             memcpy(remote_device->address, bdaddr, 6);
             remote_device->address_type = BT_SMART_ADDR_TYPE_PUBLIC;
             /* Connecting... */
-            ret = mico_rtos_send_asynchronous_event(&g_ble_context.m_worker_thread, mico_ble_central_connect_handler, remote_device);
+            ret = (mico_bt_result_t)mico_rtos_send_asynchronous_event(&g_ble_context.m_worker_thread,
+                                                                      mico_ble_central_connect_handler,
+                                                                      remote_device);
             require_noerr_string(ret, exit, "Send asynchronous event failed");
             /* Handle Event */
             SM_Handle(&g_ble_context.m_sm, BLE_SM_EVT_CENTRAL_LECONN_CMD);
@@ -980,14 +1007,15 @@ mico_bt_result_t mico_ble_disconnect(uint16_t connect_handle)
     UNUSED_PARAMETER(connect_handle);
 
     if (SM_InState(&g_ble_context.m_sm, BLE_STATE_PERIPHERAL_CONNECTED)) {
-        ret = mico_bt_peripheral_disconnect();
+        ret = (mico_bt_result_t)mico_bt_peripheral_disconnect();
         if (ret == MICO_BT_SUCCESS) {
             SM_Handle(&g_ble_context.m_sm, BLE_SM_EVT_PERIPHERAL_DISCONNECTED);
         }
     }
 
     if (SM_InState(&g_ble_context.m_sm, BLE_STATE_CENTRAL_CONNECTED)) {
-        ret = mico_bt_smartbridge_disconnect(&g_ble_context.m_central_socket, MICO_FALSE);
+        ret = (mico_bt_result_t)mico_bt_smartbridge_disconnect(&g_ble_context.m_central_socket,
+                                                               MICO_FALSE);
         if (ret == MICO_BT_SUCCESS) {
             SM_Handle(&g_ble_context.m_sm, BLE_SM_EVT_CENTRAL_DISCONNECTED);
         }
@@ -1029,16 +1057,23 @@ mico_bt_result_t mico_ble_send_data(const uint8_t *p_data, uint32_t length, uint
 {
     mico_bt_result_t ret = MICO_BT_BADARG;
 
-    require(p_data != NULL && length > 0, exit);
+    UNUSED_PARAMETER(timeout_ms);
+
+    require(p_data != NULL && length > 0 && length < (uint16_t)-1, exit);
 
     if (SM_InState(&g_ble_context.m_sm, BLE_STATE_CENTRAL_CONNECTED)) {
 
     } else if (SM_InState(&g_ble_context.m_sm, BLE_STATE_PERIPHERAL_CONNECTED)) {
-        mico_bt_peripheral_ext_attribute_value_write(g_ble_context.m_spp_out_attribute, length, 0, p_data);
+        mico_bt_peripheral_ext_attribute_value_write(g_ble_context.m_spp_out_attribute,
+                                                     (uint16_t)length,
+                                                     0,
+                                                     p_data);
         if (g_ble_context.m_spp_out_cccd_value & GATT_CLIENT_CONFIG_NOTIFICATION) {
-            mico_bt_peripheral_gatt_notify_attribute_value(&g_ble_context.m_peripheral_socket, g_ble_context.m_spp_out_attribute);
+            mico_bt_peripheral_gatt_notify_attribute_value(&g_ble_context.m_peripheral_socket,
+                                                           g_ble_context.m_spp_out_attribute);
         } else if (g_ble_context.m_spp_out_cccd_value & GATT_CLIENT_CONFIG_INDICATION) {
-            mico_bt_peripheral_gatt_indicate_attribute_value(&g_ble_context.m_peripheral_socket, g_ble_context.m_spp_out_attribute);
+            mico_bt_peripheral_gatt_indicate_attribute_value(&g_ble_context.m_peripheral_socket,
+                                                             g_ble_context.m_spp_out_attribute);
         } else {
             ret = MICO_BT_BADOPTION;
         }

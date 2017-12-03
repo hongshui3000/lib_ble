@@ -213,7 +213,9 @@ static OSStatus ble_event_handle(mico_ble_event_t  event, const mico_ble_evt_par
             at_ble_log("A remote device is connected");
             if (g_ble_context.p_config->is_enable_event) {
                 /* +LEPCONN:ON,<addr>,<handle> */
-                sprintf(response, "%s+LEPCONN:ON,%s,0x%04x%s", AT_PROMPT, bdaddr_ntoa(params->bd_addr, str_addr), params->u.conn.handle, AT_PROMPT);
+                sprintf(response, "%s+LEPCONN:ON,%s,0x%04x%s", AT_PROMPT,
+                        bdaddr_ntoa(params->bd_addr, str_addr),
+                        params->u.conn.handle, AT_PROMPT);
                 uart_driver_struct_get()->write((uint8_t *)response, strlen(response));
             }
             break;
@@ -243,7 +245,9 @@ static OSStatus ble_event_handle(mico_ble_event_t  event, const mico_ble_evt_par
             at_ble_log("A remote device is connected");
             if (g_ble_context.p_config->is_enable_event) {
                 /* +LESCONN:ON */
-                sprintf(response, "%s+LESCONN:ON,%s,0x%04x%s,", AT_PROMPT, bdaddr_ntoa(params->bd_addr, str_addr), params->u.conn.handle, AT_PROMPT);
+                sprintf(response, "%s+LESCONN:ON,%s,0x%04x%s", AT_PROMPT,
+                        bdaddr_ntoa(params->bd_addr, str_addr),
+                        params->u.conn.handle, AT_PROMPT);
                 uart_driver_struct_get()->write((uint8_t *)response, strlen(response));
             }
             break;
@@ -254,7 +258,7 @@ static OSStatus ble_event_handle(mico_ble_event_t  event, const mico_ble_evt_par
             at_ble_log("A remote device is disconnected");
             if (g_ble_context.p_config->is_enable_event) {
                 /* +LESCONN:ON */
-                sprintf(response, "%s+LESCONN:OFF,0x%04x%s", AT_PROMPT, params->u.disconn.handle, AT_PROMPT);
+                sprintf(response, "%s+LESCONN:OFF%s", AT_PROMPT, AT_PROMPT);
                 uart_driver_struct_get()->write((uint8_t *)response, strlen(response));
             }
             break;
@@ -281,7 +285,9 @@ static OSStatus ble_event_handle(mico_ble_event_t  event, const mico_ble_evt_par
                         params->u.report.rssi);
             if (g_ble_context.p_config->is_at_mode && g_ble_context.p_config->is_enable_event) {
                 /* +LEREPORT:<name>,<addr>,<rssi> */
-                sprintf(response, "%s+LEREPORT:%s,%s,%d%s", AT_PROMPT, params->u.report.name, str_addr, params->u.report.rssi, AT_PROMPT);
+                sprintf(response, "%s+LEREPORT:%s,%s,%d%s", AT_PROMPT,
+                        params->u.report.name, str_addr,
+                        params->u.report.rssi, AT_PROMPT);
                 uart_driver_struct_get()->write((uint8_t *)response, strlen(response));
             }
             break;
