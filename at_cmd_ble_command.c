@@ -85,21 +85,21 @@ static at_cmd_ble_context_t g_ble_context;
 
 static const struct at_cmd_command g_ble_cmds[] = {
         /* Common */
-        { "AT+LENAME",      ble_get_device_name,    ble_set_device_name,            NULL,                       NULL },
-        { "AT+LEMAC",       ble_get_device_addr,    NULL,                           NULL,                       NULL },
-        { "AT+LEEVENT",     NULL,                   ble_set_event_mask,             ble_get_event_mask,         NULL },
-        { "AT+LESTATE",     NULL,                   NULL,                           ble_get_state,              NULL },
-        { "AT+LESENDRAW",   NULL,                   NULL,                           NULL,                       ble_send_rawdata },
-        { "AT+LESEND",      NULL,                   ble_send_data_packet,           NULL,                       NULL },
-        { "AT+LEDISCONN",   NULL,                   ble_gap_disconnect,             NULL,                       NULL },
+        { "AT+LENAME",      ble_get_device_name,    ble_set_device_name,            NULL,                       NULL },                     /* AT+LENAME=?\r or AT+LENAME=<name>\r */
+        { "AT+LEMAC",       ble_get_device_addr,    NULL,                           NULL,                       NULL },                     /* AT+LEMAC=?\r */
+        { "AT+LEEVENT",     NULL,                   ble_set_event_mask,             ble_get_event_mask,         NULL },                     /* AT+LEEVENT?\r or AT+LEEVENT=<ON/OFF>\r*/
+        { "AT+LESTATE",     NULL,                   NULL,                           ble_get_state,              NULL },                     /* AT+LESTATE?\r */
+        { "AT+LESENDRAW",   NULL,                   NULL,                           NULL,                       ble_send_rawdata },         /* AT+LESENDRAW\r */
+        { "AT+LESEND",      NULL,                   ble_send_data_packet,           NULL,                       NULL },                     /* AT+LESEND=<length>\r  ...  <xxxxxx> */
+        { "AT+LEDISCONN",   NULL,                   ble_gap_disconnect,             NULL,                       NULL },                     /* AT+LEDISCONN=<handle>\r */
 
         /* BLE Central */
-        { "AT+LEWLNAME",    ble_get_whitelist_name, ble_set_whitelist_name,         NULL,                       NULL },
-        { "AT+LESCAN",      NULL,                   NULL,                           NULL,                       ble_set_scan_mode },
-        { "AT+LECONN",      NULL,                   ble_gap_connect,                NULL,                       NULL },
+        { "AT+LEWLNAME",    ble_get_whitelist_name, ble_set_whitelist_name,         NULL,                       NULL },                     /* AT+LEWLNAME=? or AT+LEWLNAME=<name>\r */
+        { "AT+LESCAN",      NULL,                   NULL,                           NULL,                       ble_set_scan_mode },        /* AT+LESCAN\r */
+        { "AT+LECONN",      NULL,                   ble_gap_connect,                NULL,                       NULL },                     /* AT+LECONN=<addr>\r */
 
         /* BLE Peripheral */
-        { "AT+LEADV",       NULL,                   NULL,                           NULL,                       ble_set_advertisement_mode },
+        { "AT+LEADV",       NULL,                   NULL,                           NULL,                       ble_set_advertisement_mode }, /* AT+LEADV\r */
 };
 
 
